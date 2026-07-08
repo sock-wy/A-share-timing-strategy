@@ -21,10 +21,17 @@ from src.backtest import run_backtest            # noqa: E402
 from src.plotting import build_report            # noqa: E402
 from src.config import REPORT_PERF               # noqa: E402
 
-# 已实现子策略登记：显示名 -> strategy.py 路径
+# 已实现子策略登记：显示名 -> strategy.py 路径（08 大小单缺数据，未登记）
 IMPLEMENTED = {
     "01 宏观流动性": ROOT / "strategies" / "01_宏观流动性" / "strategy.py",
     "02 信贷预期": ROOT / "strategies" / "02_信贷预期" / "strategy.py",
+    "03 中美汇率": ROOT / "strategies" / "03_中美汇率" / "strategy.py",
+    "04 中美利差": ROOT / "strategies" / "04_中美利差" / "strategy.py",
+    "05 期货基差": ROOT / "strategies" / "05_期货基差" / "strategy.py",
+    "06 期权PCR": ROOT / "strategies" / "06_期权PCR" / "strategy.py",
+    "07 融资融券": ROOT / "strategies" / "07_融资融券" / "strategy.py",
+    "09 筹码结构": ROOT / "strategies" / "09_筹码结构" / "strategy.py",
+    "10 长端动量": ROOT / "strategies" / "10_长端动量" / "strategy.py",
 }
 
 

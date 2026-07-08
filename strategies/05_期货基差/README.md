@@ -12,4 +12,4 @@
 ## 方法：基差均线偏离度 `ma_deviation` → 阈值 p 三态信号 `threshold_signal`。
 ## 参数：ma_window=20, p=0.5（`config.PARAMS['期货基差']`，待校准）
 ## 研报绩效（表5）：年化 9.09% ｜ 回撤 25.99% ｜ 次胜率 70% ｜ 次赔率 1.44 ｜ 39 次 ｜ 次均 30 天
-## 状态：📄 待实现（需先写 `load_ic_basis`：读 `IC股指期货基差` sheet，header 在第 4 行）
+## 状态：✅ 已实现（需先写 `load_ic_basis`：读 `IC股指期货基差` sheet，header 在第 4 行）

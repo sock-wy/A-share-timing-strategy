@@ -15,4 +15,4 @@
 3. 残差**短期均值**（`short_ma`）> 0 做多，< 0 空仓。
 ## 参数：neutral_window=60, short_ma=20（`config.PARAMS['融资融券']`，待校准）
 ## 研报绩效（表7）：年化 7.66% ｜ 回撤 22.83% ｜ 次胜率 54.29% ｜ 次赔率 2.01 ｜ 34 次 ｜ 次均 33 天
-## 状态：📄 待实现（`load_margin` + `load_float_mktcap`）
+## 状态：✅ 已实现（`load_margin` + `load_float_mktcap`）

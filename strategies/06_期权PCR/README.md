@@ -12,4 +12,4 @@
 ## 方法：PCR 长短均线差 → 下行做多（`sign_signal(positive_is_long=False)`）。
 ## 参数：short_ma=20, long_ma=60（`config.PARAMS['期权PCR']`，待校准）
 ## 研报绩效（表6）：年化 9.86% ｜ 回撤 22.11% ｜ 次胜率 74.58% ｜ 次赔率 1.05 ｜ 58 次 ｜ 次均 23 天
-## 状态：📄 待实现（需写 `load_pcr`：PCR = 认沽持仓量 / 认购持仓量）
+## 状态：✅ 已实现（需写 `load_pcr`：PCR = 认沽持仓量 / 认购持仓量）

@@ -11,4 +11,4 @@
 USDCNH 长短均线差 → 均线差 < 0（汇率下行/升值）做多，> 0 空仓（`sign_signal(..., positive_is_long=False)`）。
 ## 参数：short_ma=20, long_ma=60（`config.PARAMS['中美汇率']`，待校准）
 ## 研报绩效（表3）：年化 11.23% ｜ 回撤 34.44% ｜ 次胜率 73.08% ｜ 次赔率 1.52 ｜ 25 次 ｜ 次均 54 天
-## 状态：📄 待实现（可仿照 01/02：`load_usdcnh` + `ma_diff` + `sign_signal(positive_is_long=False)`）
+## 状态：✅ 已实现（可仿照 01/02：`load_usdcnh` + `ma_diff` + `sign_signal(positive_is_long=False)`）

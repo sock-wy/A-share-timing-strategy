@@ -17,6 +17,8 @@
 import pandas as pd
 from .config import DATA_FILE
 
+pd.options.mode.chained_assignment = None   # 关闭 Wind 竖排表切片赋值的链式告警
+
 
 def _to_dt(df, col="date"):
     df[col] = pd.to_datetime(df[col])
@@ -106,10 +108,59 @@ def load_float_mktcap():
     """
     df = pd.read_excel(DATA_FILE, sheet_name="A股流通市值", header=3)
     df = df.rename(columns={df.columns[0]: "date"})
-    df = df[pd.to_datetime(df["date"], errors="coerce").notna()]
+    df = df[pd.to_datetime(df["date"], errors="coerce").notna()].copy()
     df = _to_dt(df)
     df["float_mktcap"] = pd.to_numeric(df.iloc[:, -1], errors="coerce")
     return df[["date", "float_mktcap"]].dropna()
+
+
+# ============================================================ 4.1 期货基差（日度）
+def load_ic_basis():
+    """IC股指期货基差。频率：日度。基差 = IC期货收盘 − 中证500现货收盘。
+
+    原表 Wind 竖排：前 5 行为标题，数据从第 6 行；列 = date, IC.CFE(期货), 000905.SH(现货)。
+    注意：IC 于 2015-04-16 上市，之前期货为空 -> 基差从该日起才有效。
+    """
+    df = pd.read_excel(DATA_FILE, sheet_name="IC股指期货基差", header=None, skiprows=5,
+                       names=["date", "fut", "spot"])
+    df = _to_dt(df)
+    df["fut"] = pd.to_numeric(df["fut"], errors="coerce")
+    df["spot"] = pd.to_numeric(df["spot"], errors="coerce")
+    df["basis"] = df["fut"] - df["spot"]                 # 基差（点）
+    df["basis_rate"] = df["basis"] / df["spot"]          # 基差率（归一化，更稳健）
+    return df.dropna(subset=["basis_rate"])[["date", "basis", "basis_rate"]]
+
+
+# ============================================================ 4.2 期权PCR（日度）
+def load_pcr():
+    """上证50ETF期权 认沽/认购持仓量比 PCR。频率：日度。
+
+    原表前 6 行为标题，数据从第 7 行；列 = date, calloi(认购持仓), putoi(认沽持仓)。
+    PCR = 认沽持仓 / 认购持仓；期权 2015-02-09 上市，之前为 0 -> 剔除。
+    """
+    df = pd.read_excel(DATA_FILE, sheet_name="上证50认沽认购持仓量比", header=None, skiprows=6,
+                       names=["date", "calloi", "putoi"])
+    df = _to_dt(df)
+    for c in ["calloi", "putoi"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df = df[(df["calloi"] > 0) & (df["putoi"] > 0)].copy()
+    df["pcr"] = df["putoi"] / df["calloi"]
+    return df[["date", "pcr"]].reset_index(drop=True)
+
+
+# ============================================================ 6.1 筹码结构用：宽基换手率（日度）
+def load_turnover(name="中证800"):
+    """各宽基指数日换手率（%）。频率：日度。
+
+    原表前 5 行为标题，数据从第 6 行；列含 8 个宽基。返回 date + 指定指数换手率。
+    """
+    # header=3 取“日期/上证指数/…/中证800/…”中文名行；下一行(代码行)由日期非法被过滤
+    df = pd.read_excel(DATA_FILE, sheet_name="各宽基换手率", header=3)
+    df = df.rename(columns={df.columns[0]: "date"})
+    df = df[pd.to_datetime(df["date"], errors="coerce").notna()].copy()
+    df = _to_dt(df)
+    df["turnover"] = pd.to_numeric(df[name], errors="coerce")
+    return df[["date", "turnover"]].dropna()
 
 
 # ============================================================ 通用工具

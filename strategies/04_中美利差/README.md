@@ -10,4 +10,4 @@
 ## 方法：利差长短均线差 → > 0（利差上行）做多，< 0 空仓。
 ## 参数：short_ma=20, long_ma=60（`config.PARAMS['中美利差']`，待校准）
 ## 研报绩效（表4）：年化 10.45% ｜ 回撤 14.96% ｜ 次胜率 80% ｜ 次赔率 3.13 ｜ 14 次 ｜ 次均 76 天
-## 状态：📄 待实现（`load_us_cn_spread` + `ma_diff` + `sign_signal(positive_is_long=True)`）
+## 状态：✅ 已实现（`load_us_cn_spread` + `ma_diff` + `sign_signal(positive_is_long=True)`）
