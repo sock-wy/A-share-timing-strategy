@@ -87,7 +87,7 @@ if page == "全策略汇总":
             "复现次数": fmt("信号次数", m["信号次数"]),
             "研报次数": fmt("信号次数", rep.get("信号次数")),
         })
-    st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     st.caption("默认参数下的复现；调参请进「单策略详情 → 参数复原对比」。")
 
 # ============================================================ 单策略详情
@@ -103,16 +103,16 @@ else:
     # ---------------- 标签1：基准表现（默认参数）----------------
     with tab1:
         m, wk, trades, name, _ = compute(folder, None)
-        st.plotly_chart(nav_figure({"weekly": wk, "name": name}), width='stretch')
+        st.plotly_chart(nav_figure({"weekly": wk, "name": name}), use_container_width=True)
         st.markdown("**绩效指标（复现 vs 研报）**")
         tbl = pd.DataFrame({
             "指标": METRIC_ORDER,
             "复现": [fmt(k, m.get(k)) for k in METRIC_ORDER],
             "研报": [fmt(k, rep.get(k)) for k in METRIC_ORDER],
         })
-        st.dataframe(tbl, width='stretch', hide_index=True)
+        st.dataframe(tbl, use_container_width=True, hide_index=True)
         st.markdown("**逐笔交易明细**")
-        st.dataframe(trades, width='stretch', hide_index=True)
+        st.dataframe(trades, use_container_width=True, hide_index=True)
 
     # ---------------- 标签2：参数复原对比（旋钮实时）----------------
     with tab2:
@@ -142,7 +142,7 @@ else:
 
         m2, wk2, trades2, _, _ = compute(folder, tuple(sorted(params.items())))
         st.plotly_chart(nav_figure({"weekly": wk2, "name": f"{name}（当前参数）"}),
-                        width='stretch')
+                        use_container_width=True)
 
         st.markdown("**特征指标：当前参数 vs 研报**")
         feat = ["年化收益率", "年化IR", "最大回撤", "信号次数"]
