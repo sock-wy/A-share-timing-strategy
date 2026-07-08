@@ -143,12 +143,17 @@ else:
         space = PARAM_SPACE.get(name, {})
         defaults = PARAMS.get(name, {})
         recovered_file = ROOT / "strategies" / folder / "复原参数.json"
+        scan_file = ROOT / "strategies" / folder / "扫描摘要.json"
+        scan_data = json.load(open(scan_file, encoding="utf-8")) if scan_file.exists() else {}
 
         st.markdown("**参数旋钮**（拖动实时重算）")
-        col_btn, _ = st.columns([1, 3])
-        if recovered_file.exists() and col_btn.button("载入复原参数"):
-            best = json.load(open(recovered_file, encoding="utf-8"))
-            for pn, v in best.items():
+        b1, b2, _ = st.columns([1, 1, 2])
+        if recovered_file.exists() and b1.button("载入复原参数"):
+            for pn, v in json.load(open(recovered_file, encoding="utf-8")).items():
+                st.session_state[f"{folder}_{pn}"] = v
+            st.rerun()
+        if "综合最相似" in scan_data and b2.button("载入最相似参数"):
+            for pn, v in scan_data["综合最相似"]["参数"].items():
                 st.session_state[f"{folder}_{pn}"] = v
             st.rerun()
 
@@ -180,11 +185,9 @@ else:
         st.markdown("**📄 研报原文·结果描述**")
         st.info(REPORT_RESULT_TEXT.get(name, "（研报未单列该子策略结果）"))
 
-        scan_file = ROOT / "strategies" / folder / "扫描摘要.json"
-        if scan_file.exists():
-            sc = json.load(open(scan_file, encoding="utf-8"))
-            a, d, ir = sc["年化最高"], sc["回撤最小"], sc["IR最高"]
-            st.markdown(f"**🔍 参数扫描要点**（在预设网格 {sc['网格组合数']} 组组合上遍历）")
+        if scan_data:
+            a, d, ir = scan_data["年化最高"], scan_data["回撤最小"], scan_data["IR最高"]
+            st.markdown(f"**🔍 参数扫描要点**（在预设网格 {scan_data['网格组合数']} 组组合上遍历）")
             st.markdown(
                 f"- **年化最高 {a['年化收益率']*100:.2f}%** ← 参数 `{a['参数']}`"
                 f"（此时 回撤 {a['最大回撤']*100:.2f}%、IR {a['年化IR']:.2f}、信号 {a['信号次数']} 次）\n"
@@ -194,3 +197,15 @@ else:
                 f"（年化 {ir['年化收益率']*100:.2f}%、回撤 {ir['最大回撤']*100:.2f}%）"
             )
             st.caption("扫描网格见 src/config.py 的 SCAN_GRID，可扩大后重跑 `python -m src.scan`。")
+
+        # ---------------- 综合最相似参数（多指标总体最像研报）----------------
+        if "综合最相似" in scan_data:
+            sim = scan_data["综合最相似"]
+            st.markdown(f"**🎯 综合最相似参数**：`{sim['参数']}` ｜ 综合距离 **{sim['综合距离']:.3f}**（越小越像）")
+            bd = pd.DataFrame(sim["逐指标"])
+            bd["复现"] = [fmt(k, v) for k, v in zip(bd["指标"], bd["复现"])]
+            bd["研报"] = [fmt(k, v) for k, v in zip(bd["指标"], bd["研报"])]
+            bd["相对偏差"] = [f"{x*100:.1f}%" if x is not None else "-" for x in bd["相对偏差"]]
+            st.dataframe(bd[["指标", "复现", "研报", "相对偏差", "权重"]],
+                         use_container_width=True, hide_index=True)
+            st.caption(sim["说明"])   # 一行小字：距离怎么算、哪些×2

@@ -45,6 +45,11 @@ python run_all.py                          # 一键跑全部 + 打印“复现 v
 ```bash
 python strategies/01_宏观流动性/参数复原.py  # 01 已配置；02-10 见各目录内注释模板
 ```
+**参数扫描 / 综合最相似**（网格遍历 + 局部细化，结果写入各 扫描摘要.json）：
+```bash
+python -m src.scan          # 年化最高/回撤最小/IR最高 各在何参数
+python -m src.similarity    # 多指标综合最相似（年化&回撤权重×2）的参数组合
+```
 **交互面板**（全中文，含参数旋钮实时出曲线）：
 ```bash
 streamlit run dashboard/app.py
