@@ -17,8 +17,8 @@ NAME = "期货基差"
 REPORT_KEY = "期货基差"
 
 
-def build_signal():
-    p = PARAMS[NAME]
+def build_signal(params=None):
+    p = params or PARAMS[NAME]
     s = load_ic_basis().set_index("date")["basis_rate"]
     deviation = rolling_zscore(s, p["ma_window"])              # 均线偏离度（标准化）
     signal = threshold_signal(deviation, p["p"])              # 向上偏离做多、向下偏离空仓

@@ -16,8 +16,8 @@ NAME = "中美利差"
 REPORT_KEY = "中美利差"
 
 
-def build_signal():
-    p = PARAMS[NAME]
+def build_signal(params=None):
+    p = params or PARAMS[NAME]
     s = load_us_cn_spread().set_index("date")["spread"]
     direction = ma_diff(s, p["short_ma"], p["long_ma"])        # 利差长短均线差
     # 均线差>0 表示利差上行/人民币资产吸引力提升 -> 做多

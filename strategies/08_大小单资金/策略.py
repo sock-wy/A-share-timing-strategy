@@ -17,7 +17,7 @@ NAME = "大小单资金"
 REPORT_KEY = "大小单资金"
 
 
-def build_signal():
+def build_signal(params=None):
     raise NotImplementedError(
         "缺“超大单主动净流入”数据，无法构造大小单资金信号。"
         "请先在 data/raw/主数据.xlsx 补充该表，并在 data_loader.py 增加 load_super_large_order()。"

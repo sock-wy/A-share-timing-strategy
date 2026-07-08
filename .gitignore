@@ -4,3 +4,6 @@ __pycache__/
 .DS_Store
 outputs/*.html
 .venv/
+
+# 参数复原生成的调整日志（可复现，不入库）
+strategies/*/调整日志.csv

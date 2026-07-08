@@ -19,8 +19,8 @@ NAME = "长端动量"
 REPORT_KEY = "长端动量"
 
 
-def build_signal():
-    p = PARAMS[NAME]
+def build_signal(params=None):
+    p = params or PARAMS[NAME]
     df = load_index("中证800")[["date", "pct_chg", "amplitude"]].set_index("date").dropna()
     amp = df["amplitude"].values
     ret = df["pct_chg"].values

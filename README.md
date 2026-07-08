@@ -18,7 +18,7 @@ src/                 公共引擎（所有子策略共用，改一处全局生�
   ├─ backtest.py     周度回测引擎（防未来函数对齐）
   ├─ metrics.py      研报全部指标（年化/IR/回撤/Calmar/周胜赔率/次胜赔率/次均天数/次数）
   └─ plotting.py     生成自包含 report.html（净值+做多窗口+逐笔交易+指标对照）
-strategies/          10 个子策略，每个 = README(原文) + strategy.py(产信号) + run.py
+strategies/          10 个子策略，每个 = README(原文) + 策略.py(产信号) + 运行.py + 参数复原.py
   ├─ 01_宏观流动性/ 02_信贷预期/          ✅ 已实现
   ├─ 03_中美汇率/ 04_中美利差/           ✅ 已实现
   ├─ 05_期货基差/ 06_期权PCR/            ✅ 已实现
@@ -36,14 +36,19 @@ pip install -r requirements.txt
 ```
 
 ## 怎么跑、在哪看结果
-**单个子策略**（生成可交互 HTML，浏览器打开即可看净值+每一笔交易+指标对照）：
+**单个子策略回测**（生成可交互 HTML，浏览器打开即可看净值+每一笔交易+指标对照）：
 ```bash
-python strategies/01_宏观流动性/run.py     # -> outputs/宏观流动性_report.html
-python strategies/02_信贷预期/run.py       # -> outputs/信贷预期_report.html
+python strategies/01_宏观流动性/运行.py     # -> outputs/宏观流动性_report.html
+python run_all.py                          # 一键跑全部 + 打印“复现 vs 研报”汇总表
 ```
-**最终面板**（后期）：
+**参数复原**（按顺序分步扫描逼近研报，输出 复原参数.json + 调整日志.csv）：
 ```bash
-streamlit run dashboard/app.py            # 下拉选策略、并排比指标
+python strategies/01_宏观流动性/参数复原.py  # 01 已配置；02-10 见各目录内注释模板
+```
+**交互面板**（全中文，含参数旋钮实时出曲线）：
+```bash
+streamlit run dashboard/app.py
+# 全策略汇总页 + 单策略两标签：①基准表现 ②参数复原对比(拖动旋钮实时重算 vs 中证800)
 ```
 
 ## 关于参数校准 ⚠️

@@ -16,8 +16,8 @@ NAME = "宏观流动性"
 REPORT_KEY = "宏观流动性"
 
 
-def build_signal():
-    p = PARAMS[NAME]
+def build_signal(params=None):
+    p = params or PARAMS[NAME]
     df = load_macro_liquidity().set_index("date")
     net = df["net_injection"]                                   # 4工具净投放加总（月度）
     smoothed = net.rolling(p["smooth_window"], min_periods=1).mean()   # 平滑

@@ -25,6 +25,6 @@
 
 ## 运行
 ```bash
-python strategies/01_宏观流动性/run.py
+python strategies/01_宏观流动性/运行.py
 # 生成 outputs/宏观流动性_report.html，浏览器打开查看净值+逐笔交易+指标对照
 ```

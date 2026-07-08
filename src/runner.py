@@ -4,10 +4,22 @@
 ==========
 每个子策略的 run.py 只需把自己的 strategy 模块传进来即可，逻辑统一在此。
 """
+import importlib.util
+from pathlib import Path
+
 from .data_loader import load_index
 from .backtest import run_backtest
 from .plotting import build_report
-from .config import BACKTEST
+from .config import BACKTEST, ROOT
+
+
+def load_strategy(folder):
+    """按目录名加载该子策略的 策略.py 模块（folder 如 '01_宏观流动性'）。"""
+    path = ROOT / "strategies" / folder / "策略.py"
+    spec = importlib.util.spec_from_file_location(f"策略_{folder}", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def run_strategy(mod, benchmark=None):

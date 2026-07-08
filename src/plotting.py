@@ -43,12 +43,9 @@ def _long_windows(wk: pd.DataFrame):
     return spans
 
 
-def build_report(result: dict, report_key: str, out_path=None) -> str:
-    """生成 HTML 报告，返回文件路径。report_key 用于取研报基准（如 '宏观流动性'）。"""
-    wk, trades, m = result["weekly"], result["trades"], result["metrics"]
-    name = result["name"]
-
-    # ---------------- ① 净值图 ----------------
+def nav_figure(result: dict, title=None):
+    """构造净值图 Plotly Figure（策略/中证800/超额 + 做多窗口阴影），供 HTML 与 dashboard 复用。"""
+    wk, name = result["weekly"], result["name"]
     fig = make_subplots(rows=1, cols=1)
     fig.add_trace(go.Scatter(x=wk.index, y=wk["bench_nav"], name="中证800",
                              line=dict(color="#9aa0a6", width=1.5)))
@@ -59,13 +56,22 @@ def build_report(result: dict, report_key: str, out_path=None) -> str:
     for a, b in _long_windows(wk):
         fig.add_vrect(x0=a, x1=b, fillcolor="#fbbc04", opacity=0.12, line_width=0)
     fig.update_layout(
-        title=f"{name}｜择时净值（黄色=做多窗口）",
+        title=title or f"{name}｜择时净值（黄色=做多窗口）",
         template="plotly_white", height=460, hovermode="x unified",
         legend=dict(orientation="h", y=1.08),
         margin=dict(l=50, r=30, t=70, b=30),
     )
     fig.update_yaxes(title="净值")
-    chart_html = fig.to_html(full_html=False, include_plotlyjs="cdn")
+    return fig
+
+
+def build_report(result: dict, report_key: str, out_path=None) -> str:
+    """生成 HTML 报告，返回文件路径。report_key 用于取研报基准（如 '宏观流动性'）。"""
+    wk, trades, m = result["weekly"], result["trades"], result["metrics"]
+    name = result["name"]
+
+    # ---------------- ① 净值图 ----------------
+    chart_html = nav_figure(result).to_html(full_html=False, include_plotlyjs="cdn")
 
     # ---------------- ② 指标对照表 ----------------
     rep = REPORT_PERF.get(report_key, {})

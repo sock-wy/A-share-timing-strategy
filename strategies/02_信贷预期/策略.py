@@ -16,8 +16,8 @@ NAME = "信贷预期"
 REPORT_KEY = "信贷预期"
 
 
-def build_signal():
-    p = PARAMS[NAME]
+def build_signal(params=None):
+    p = params or PARAMS[NAME]
     df = load_long_term_loan().set_index("date")
     balance = df["value"]
     yoy = balance / balance.shift(p["yoy_window"]) - 1          # 同比（剔除季节效应）

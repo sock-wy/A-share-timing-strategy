@@ -1,0 +1,5 @@
+{
+  "smooth_window": 2,
+  "zscore_window": 30,
+  "p": 0.3
+}

@@ -16,8 +16,8 @@ NAME = "期权PCR"
 REPORT_KEY = "期权PCR"
 
 
-def build_signal():
-    p = PARAMS[NAME]
+def build_signal(params=None):
+    p = params or PARAMS[NAME]
     s = load_pcr().set_index("date")["pcr"]
     direction = ma_diff(s, p["short_ma"], p["long_ma"])        # PCR长短均线差
     # 均线差<0 表示 PCR 下行(乐观) -> 做多，故 positive_is_long=False

@@ -18,8 +18,8 @@ NAME = "融资融券"
 REPORT_KEY = "融资融券"
 
 
-def build_signal():
-    p = PARAMS[NAME]
+def build_signal(params=None):
+    p = params or PARAMS[NAME]
     m = load_margin().set_index("date")
     cap = load_float_mktcap().set_index("date")["float_mktcap"]
     df = m.join(cap, how="inner").dropna()

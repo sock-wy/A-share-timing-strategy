@@ -28,5 +28,5 @@
 
 ## 运行
 ```bash
-python strategies/02_信贷预期/run.py
+python strategies/02_信贷预期/运行.py
 ```

@@ -52,8 +52,8 @@ def _chip_distribution(high, low, close, turn):
     return resistance, support, profit
 
 
-def build_signal():
-    p = PARAMS[NAME]
+def build_signal(params=None):
+    p = params or PARAMS[NAME]
     px = load_index("中证800")[["date", "high", "low", "close"]].set_index("date")
     tn = load_turnover("中证800").set_index("date")["turnover"]
     df = px.join(tn, how="inner").dropna()

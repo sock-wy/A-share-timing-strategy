@@ -14,6 +14,8 @@
     【周度】无原始周度数据；周度是回测调仓频率，由日度重采样得到
     【缺失】超大单主动净流入（大小单资金策略所需，主数据.xlsx 中没有）
 """
+from functools import lru_cache
+
 import pandas as pd
 from .config import DATA_FILE
 
@@ -26,6 +28,7 @@ def _to_dt(df, col="date"):
 
 
 # ============================================================ 指数（日度）
+@lru_cache(maxsize=None)
 def load_index(name="中证800"):
     """加载单个宽基指数日线。频率：日度。
 
@@ -41,6 +44,7 @@ def load_index(name="中证800"):
 
 
 # ============================================================ 1 宏观流动性（月度）
+@lru_cache(maxsize=None)
 def load_macro_liquidity():
     """宏观流动性净投放。频率：月度（每月最后一日）。
 
@@ -58,6 +62,7 @@ def load_macro_liquidity():
 
 
 # ============================================================ 2 信贷预期（日度，源为月度插值）
+@lru_cache(maxsize=None)
 def load_long_term_loan():
     """金融机构中长期贷款余额。频率：日度（Wind 已将月度余额插值为日度）。
 
@@ -71,6 +76,7 @@ def load_long_term_loan():
 
 
 # ============================================================ 3.1 中美汇率（日度）
+@lru_cache(maxsize=None)
 def load_usdcnh():
     """美元兑离岸人民币汇率 USDCNH。频率：日度。列：date, close(最新价)"""
     df = pd.read_excel(DATA_FILE, sheet_name="离岸人民币汇率")
@@ -81,6 +87,7 @@ def load_usdcnh():
 
 
 # ============================================================ 3.2 中美利差（日度）
+@lru_cache(maxsize=None)
 def load_us_cn_spread():
     """中美10年期国债利差。频率：日度。spread = 中国10Y - 美国10Y"""
     df = pd.read_excel(DATA_FILE, sheet_name="中美国债利差")
@@ -92,6 +99,7 @@ def load_us_cn_spread():
 
 
 # ============================================================ 5.1 融资融券（日度）
+@lru_cache(maxsize=None)
 def load_margin():
     """融资融券。频率：日度。列：date, margin_buy(融资买入额), short_sell(融券卖出额)"""
     df = pd.read_excel(DATA_FILE, sheet_name="融资融券")
@@ -101,6 +109,7 @@ def load_margin():
     return df.dropna()
 
 
+@lru_cache(maxsize=None)
 def load_float_mktcap():
     """A股流通市值（融资融券/超大单强度的分母）。频率：日度。
 
@@ -115,6 +124,7 @@ def load_float_mktcap():
 
 
 # ============================================================ 4.1 期货基差（日度）
+@lru_cache(maxsize=None)
 def load_ic_basis():
     """IC股指期货基差。频率：日度。基差 = IC期货收盘 − 中证500现货收盘。
 
@@ -132,6 +142,7 @@ def load_ic_basis():
 
 
 # ============================================================ 4.2 期权PCR（日度）
+@lru_cache(maxsize=None)
 def load_pcr():
     """上证50ETF期权 认沽/认购持仓量比 PCR。频率：日度。
 
@@ -149,6 +160,7 @@ def load_pcr():
 
 
 # ============================================================ 6.1 筹码结构用：宽基换手率（日度）
+@lru_cache(maxsize=None)
 def load_turnover(name="中证800"):
     """各宽基指数日换手率（%）。频率：日度。
 
