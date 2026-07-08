@@ -62,11 +62,36 @@ def extract_trades(wk: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(trades)
 
 
-def run_backtest(index_df: pd.DataFrame, signal: pd.Series, name: str = "策略") -> dict:
+def _apply_min_hold(pos, min_hold):
+    """最短持仓锁定：一旦建多仓，至少持有 min_hold 周（期间翻空也不平）。
+
+    把每段做多区间向后延长到至少 min_hold 周，从而剔除超短交易、降低换手。
+    min_hold<=1 时原样返回（默认行为）。
+    """
+    if min_hold <= 1:
+        return pos
+    pos = pos.copy()
+    n, i = len(pos), 0
+    while i < n:
+        if pos[i] == 1:
+            j = i
+            while j + 1 < n and pos[j + 1] == 1:
+                j += 1
+            end = min(max(j, i + min_hold - 1), n - 1)   # 延长到至少 min_hold 周
+            pos[i:end + 1] = 1
+            i = end + 1
+        else:
+            i += 1
+    return pos
+
+
+def run_backtest(index_df: pd.DataFrame, signal: pd.Series, name: str = "策略",
+                 min_hold_weeks: int = 1) -> dict:
     """执行一个子策略的周度回测。
 
-    index_df : 基准指数日线（需含 date, close）
-    signal   : 索引为 date 的信号序列（原始频率即可），>0 视为做多
+    index_df       : 基准指数日线（需含 date, close）
+    signal         : 索引为 date 的信号序列（原始频率即可），>0 视为做多
+    min_hold_weeks : 最短持仓周数（1=不锁定；>1 时建仓后至少持有该周数）
     返回 dict：weekly(周度明细), trades(逐笔), metrics(研报指标), name
     """
     rule = BACKTEST["rebalance"]
@@ -79,7 +104,8 @@ def run_backtest(index_df: pd.DataFrame, signal: pd.Series, name: str = "策略"
     wk["signal"] = aligned.values
 
     # —— 仓位：信号>0满仓(1)、<=0空仓(0)；本周信号持有下周 ——
-    wk["position"] = (wk["signal"] > 0).astype(float).shift(1).fillna(0)
+    pos = (wk["signal"] > 0).astype(float).shift(1).fillna(0).values
+    wk["position"] = _apply_min_hold(pos, int(min_hold_weeks))
 
     # —— 区间裁剪 ——
     wk = wk.loc[BACKTEST["start"]: BACKTEST["end"]].copy()

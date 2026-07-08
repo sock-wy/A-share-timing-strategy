@@ -56,11 +56,12 @@ def get_module(folder):
 
 
 @st.cache_data(show_spinner=False)
-def compute(folder, params_items):
+def compute(folder, params_items, min_hold=1):
     """跑一次回测。params_items=None 用默认参数；否则用传入参数（元组化以便缓存）。"""
     mod = get_module(folder)
     params = dict(params_items) if params_items else None
-    res = run_backtest(load_index("中证800"), mod.build_signal(params), name=mod.NAME)
+    res = run_backtest(load_index("中证800"), mod.build_signal(params),
+                       name=mod.NAME, min_hold_weeks=min_hold)
     return res["metrics"], res["weekly"], res["trades"], mod.NAME, mod.REPORT_KEY
 
 
@@ -153,8 +154,12 @@ else:
             params[pn] = c.slider(pn, float(lo), float(hi), step=float(step), key=key)
     st.caption(f"当前参数：{params}")
 
+    min_hold = st.number_input(
+        "最短持仓周数（1=不锁定；调大→建仓后至少持有该周数，剔除超短交易、降低换手）",
+        min_value=1, max_value=12, value=1, step=1)
+
     # —— 当前参数回测（净值 / 指标 / 逐笔交易 都用这一次结果）——
-    m, wk, trades, _, _ = compute(folder, tuple(sorted(params.items())))
+    m, wk, trades, _, _ = compute(folder, tuple(sorted(params.items())), int(min_hold))
     st.plotly_chart(nav_figure({"weekly": wk, "name": f"{name}（当前参数）"}),
                     use_container_width=True)
 
