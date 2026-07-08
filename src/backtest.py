@@ -26,7 +26,12 @@ def _to_weekly(index_df: pd.DataFrame, rule: str):
 
 
 def extract_trades(wk: pd.DataFrame) -> pd.DataFrame:
-    """抽取逐笔做多交易：position==1 的连续周区间，每段一笔。"""
+    """抽取逐笔做多交易：position==1 的连续周区间，每段一笔。
+
+    进场 = 建仓那一周（信号确定的上一周五）；出场 = 本段最后一个持仓周五。
+    因此持有整整一周的交易 = 7 天（不会出现“0 天”的标注假象）。
+    trade_return = 出场收盘 / 进场收盘 − 1。
+    """
     pos = wk["position"].values
     trades, i, n = [], 0, len(wk)
     while i < n:
@@ -35,17 +40,19 @@ def extract_trades(wk: pd.DataFrame) -> pd.DataFrame:
             while j + 1 < n and pos[j + 1] == 1:
                 j += 1
             seg = wk.iloc[i:j + 1]
-            entry_d = seg["trade_date"].iloc[0]
-            exit_d = seg["trade_date"].iloc[-1]
+            entry = wk.iloc[max(i - 1, 0)]              # 建仓周（上一周五）
+            exit_ = wk.iloc[j]                          # 平仓周（本段末周五）
+            entry_d = pd.Timestamp(entry["trade_date"])
+            exit_d = pd.Timestamp(exit_["trade_date"])
             trade_ret = (1 + seg["ret"]).prod() - 1     # 持有期基准累计收益
             trades.append({
                 "序号": len(trades) + 1,
-                "进场日期": pd.Timestamp(entry_d).date(),
-                "出场日期": pd.Timestamp(exit_d).date(),
+                "进场日期": entry_d.date(),
+                "出场日期": exit_d.date(),
                 "持仓周数": len(seg),
-                "holding_days": (pd.Timestamp(exit_d) - pd.Timestamp(entry_d)).days,
-                "进场价": round(seg["close"].iloc[0], 2),
-                "出场价": round(seg["close"].iloc[-1], 2),
+                "holding_days": (exit_d - entry_d).days,
+                "进场价": round(entry["close"], 2),
+                "出场价": round(exit_["close"], 2),
                 "trade_return": trade_ret,
                 "盈亏": "盈" if trade_ret > 0 else "亏",
             })
