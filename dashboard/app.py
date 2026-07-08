@@ -108,7 +108,7 @@ if VIEW[0] == "summary":
             "研报次数": fmt("信号次数", rep.get("信号次数")),
         })
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-    st.caption("默认参数下的复现；调参请进「单策略详情 → 参数复原对比」。")
+    st.caption("默认参数下的复现；调参请点左侧某个子策略进入单策略详情。")
 
 # ============================================================ 单策略详情
 else:
@@ -121,87 +121,57 @@ else:
     mod = get_module(folder)
     name, rkey = mod.NAME, mod.REPORT_KEY
     rep = REPORT_PERF.get(rkey, {})
+    space = PARAM_SPACE.get(name, {})
+    defaults = PARAMS.get(name, {})
+    recovered_file = ROOT / "strategies" / folder / "复原参数.json"
+    scan_file = ROOT / "strategies" / folder / "扫描摘要.json"
+    scan_data = json.load(open(scan_file, encoding="utf-8")) if scan_file.exists() else {}
 
-    tab1, tab2 = st.tabs(["基准表现", "参数复原对比"])
+    st.subheader(name)
+    # ---------------- 参数旋钮 + 载入按钮 ----------------
+    st.markdown("**参数旋钮**（拖动实时重算：净值 / 绩效指标 / 逐笔交易 全部随参数更新）")
+    b1, b2, _ = st.columns([1, 1, 2])
+    if recovered_file.exists() and b1.button("载入复原参数"):
+        for pn, v in json.load(open(recovered_file, encoding="utf-8")).items():
+            st.session_state[f"{folder}_{pn}"] = v
+        st.rerun()
+    if "综合最相似" in scan_data and b2.button("载入最相似参数"):
+        for pn, v in scan_data["综合最相似"]["参数"].items():
+            st.session_state[f"{folder}_{pn}"] = v
+        st.rerun()
 
-    # ---------------- 标签1：基准表现（默认参数）----------------
-    with tab1:
-        m, wk, trades, name, _ = compute(folder, None)
-        st.plotly_chart(nav_figure({"weekly": wk, "name": name}), use_container_width=True)
-        st.markdown("**绩效指标（复现 vs 研报）**")
+    cols = st.columns(max(1, len(space)))
+    params = {}
+    for (pn, (lo, hi, step)), c in zip(space.items(), cols):
+        key = f"{folder}_{pn}"
+        is_int = float(step).is_integer() and float(lo).is_integer()
+        if key not in st.session_state:
+            st.session_state[key] = defaults.get(pn, lo)
+        if is_int:
+            params[pn] = c.slider(pn, int(lo), int(hi), step=int(step), key=key)
+        else:
+            params[pn] = c.slider(pn, float(lo), float(hi), step=float(step), key=key)
+    st.caption(f"当前参数：{params}")
+
+    # —— 当前参数回测（净值 / 指标 / 逐笔交易 都用这一次结果）——
+    m, wk, trades, _, _ = compute(folder, tuple(sorted(params.items())))
+    st.plotly_chart(nav_figure({"weekly": wk, "name": f"{name}（当前参数）"}),
+                    use_container_width=True)
+
+    # ---------------- 绩效指标（当前参数复现 vs 研报）+ 综合最相似 ----------------
+    col_l, col_r = st.columns([1, 1])
+    with col_l:
+        st.markdown("**绩效指标（当前参数复现 vs 研报）**")
         tbl = pd.DataFrame({
             "指标": METRIC_ORDER,
             "复现": [fmt(k, m.get(k)) for k in METRIC_ORDER],
             "研报": [fmt(k, rep.get(k)) for k in METRIC_ORDER],
         })
         st.dataframe(tbl, use_container_width=True, hide_index=True)
-        st.markdown("**逐笔交易明细**")
-        st.dataframe(trades, use_container_width=True, hide_index=True)
-
-    # ---------------- 标签2：参数复原对比（旋钮实时）----------------
-    with tab2:
-        space = PARAM_SPACE.get(name, {})
-        defaults = PARAMS.get(name, {})
-        recovered_file = ROOT / "strategies" / folder / "复原参数.json"
-        scan_file = ROOT / "strategies" / folder / "扫描摘要.json"
-        scan_data = json.load(open(scan_file, encoding="utf-8")) if scan_file.exists() else {}
-
-        st.markdown("**参数旋钮**（拖动实时重算）")
-        b1, b2, _ = st.columns([1, 1, 2])
-        if recovered_file.exists() and b1.button("载入复原参数"):
-            for pn, v in json.load(open(recovered_file, encoding="utf-8")).items():
-                st.session_state[f"{folder}_{pn}"] = v
-            st.rerun()
-        if "综合最相似" in scan_data and b2.button("载入最相似参数"):
-            for pn, v in scan_data["综合最相似"]["参数"].items():
-                st.session_state[f"{folder}_{pn}"] = v
-            st.rerun()
-
-        cols = st.columns(max(1, len(space)))
-        params = {}
-        for (pn, (lo, hi, step)), c in zip(space.items(), cols):
-            key = f"{folder}_{pn}"
-            is_int = float(step).is_integer() and float(lo).is_integer()
-            if key not in st.session_state:
-                st.session_state[key] = defaults.get(pn, lo)
-            if is_int:
-                params[pn] = c.slider(pn, int(lo), int(hi), step=int(step), key=key)
-            else:
-                params[pn] = c.slider(pn, float(lo), float(hi), step=float(step), key=key)
-
-        m2, wk2, trades2, _, _ = compute(folder, tuple(sorted(params.items())))
-        st.plotly_chart(nav_figure({"weekly": wk2, "name": f"{name}（当前参数）"}),
-                        use_container_width=True)
-
-        st.markdown("**特征指标：当前参数 vs 研报**")
-        feat = ["年化收益率", "年化IR", "最大回撤", "信号次数"]
-        c1, c2, c3, c4 = st.columns(4)
-        for k, c in zip(feat, [c1, c2, c3, c4]):
-            c.metric(k, fmt(k, m2.get(k)), f"研报 {fmt(k, rep.get(k))}", delta_color="off")
-        st.caption(f"当前参数：{params}")
-
-        # ---------------- 底部小版块：研报原文结果 + 参数扫描要点 ----------------
-        st.markdown("---")
-        st.markdown("**📄 研报原文·结果描述**")
-        st.info(REPORT_RESULT_TEXT.get(name, "（研报未单列该子策略结果）"))
-
-        if scan_data:
-            a, d, ir = scan_data["年化最高"], scan_data["回撤最小"], scan_data["IR最高"]
-            st.markdown(f"**🔍 参数扫描要点**（在预设网格 {scan_data['网格组合数']} 组组合上遍历）")
-            st.markdown(
-                f"- **年化最高 {a['年化收益率']*100:.2f}%** ← 参数 `{a['参数']}`"
-                f"（此时 回撤 {a['最大回撤']*100:.2f}%、IR {a['年化IR']:.2f}、信号 {a['信号次数']} 次）\n"
-                f"- **最大回撤最小 {d['最大回撤']*100:.2f}%**（限年化>0）← 参数 `{d['参数']}`"
-                f"（此时 年化 {d['年化收益率']*100:.2f}%）\n"
-                f"- **年化IR最高 {ir['年化IR']:.2f}** ← 参数 `{ir['参数']}`"
-                f"（年化 {ir['年化收益率']*100:.2f}%、回撤 {ir['最大回撤']*100:.2f}%）"
-            )
-            st.caption("扫描网格见 src/config.py 的 SCAN_GRID，可扩大后重跑 `python -m src.scan`。")
-
-        # ---------------- 综合最相似参数（多指标总体最像研报）----------------
+    with col_r:
         if "综合最相似" in scan_data:
             sim = scan_data["综合最相似"]
-            st.markdown(f"**🎯 综合最相似参数**：`{sim['参数']}` ｜ 综合距离 **{sim['综合距离']:.3f}**（越小越像）")
+            st.markdown(f"**🎯 综合最相似参数**：`{sim['参数']}` ｜ 综合距离 **{sim['综合距离']:.3f}**")
             bd = pd.DataFrame(sim["逐指标"])
             bd["复现"] = [fmt(k, v) for k, v in zip(bd["指标"], bd["复现"])]
             bd["研报"] = [fmt(k, v) for k, v in zip(bd["指标"], bd["研报"])]
@@ -209,3 +179,24 @@ else:
             st.dataframe(bd[["指标", "复现", "研报", "相对偏差", "权重"]],
                          use_container_width=True, hide_index=True)
             st.caption(sim["说明"])   # 一行小字：距离怎么算、哪些×2
+
+    # ---------------- 逐笔交易明细（随参数更新）----------------
+    st.markdown("**逐笔交易明细（当前参数，每改一次参数即刷新）**")
+    st.dataframe(trades, use_container_width=True, hide_index=True)
+
+    # ---------------- 底部：研报原文 + 参数扫描要点 ----------------
+    st.markdown("---")
+    st.markdown("**📄 研报原文·结果描述**")
+    st.info(REPORT_RESULT_TEXT.get(name, "（研报未单列该子策略结果）"))
+    if scan_data:
+        a, d, ir = scan_data["年化最高"], scan_data["回撤最小"], scan_data["IR最高"]
+        st.markdown(f"**🔍 参数扫描要点**（在预设网格 {scan_data['网格组合数']} 组组合上遍历）")
+        st.markdown(
+            f"- **年化最高 {a['年化收益率']*100:.2f}%** ← 参数 `{a['参数']}`"
+            f"（此时 回撤 {a['最大回撤']*100:.2f}%、IR {a['年化IR']:.2f}、信号 {a['信号次数']} 次）\n"
+            f"- **最大回撤最小 {d['最大回撤']*100:.2f}%**（限年化>0）← 参数 `{d['参数']}`"
+            f"（此时 年化 {d['年化收益率']*100:.2f}%）\n"
+            f"- **年化IR最高 {ir['年化IR']:.2f}** ← 参数 `{ir['参数']}`"
+            f"（年化 {ir['年化收益率']*100:.2f}%、回撤 {ir['最大回撤']*100:.2f}%）"
+        )
+        st.caption("扫描网格见 src/config.py 的 SCAN_GRID，可扩大后重跑 `python -m src.scan`。")
