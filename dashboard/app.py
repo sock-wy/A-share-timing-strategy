@@ -67,10 +67,30 @@ def compute(folder, params_items):
 st.set_page_config(page_title="A股择时多策略面板", layout="wide")
 st.title("A股权益择时 · 多策略回测面板")
 
-page = st.sidebar.radio("页面", ["全策略汇总", "单策略详情"])
+# ---------------- 侧边栏导航：六大维度手风琴，点开选子策略 ----------------
+if "view" not in st.session_state:
+    st.session_state.view = ("strategy", "宏观流动性", "01_宏观流动性")
+
+st.sidebar.title("导航")
+if st.sidebar.button("📊 全策略汇总", use_container_width=True,
+                     type="primary" if st.session_state.view[0] == "summary" else "secondary"):
+    st.session_state.view = ("summary",)
+    st.rerun()
+
+st.sidebar.markdown("**研报六大维度**（点开选子策略）")
+_cur = st.session_state.view[2] if st.session_state.view[0] == "strategy" else None
+for _cat, _subs in CATEGORIES.items():
+    with st.sidebar.expander(_cat, expanded=any(f == _cur for _, f in _subs)):
+        for _sname, _folder in _subs:
+            if st.button(_sname, key=f"nav_{_folder}", use_container_width=True,
+                         type="primary" if _folder == _cur else "secondary"):
+                st.session_state.view = ("strategy", _sname, _folder)
+                st.rerun()
+
+VIEW = st.session_state.view
 
 # ============================================================ 全策略汇总
-if page == "全策略汇总":
+if VIEW[0] == "summary":
     st.subheader("全策略汇总：当前复现 vs 研报")
     rows = []
     for disp, folder in STRATS.items():
@@ -92,16 +112,7 @@ if page == "全策略汇总":
 
 # ============================================================ 单策略详情
 else:
-    # 侧边栏两级选择：先选研报六大维度，再选维度内子策略（1-2个）
-    dim = st.sidebar.selectbox("研报维度（六大类）", list(CATEGORIES.keys()))
-    subs = CATEGORIES[dim]                       # [(子策略名, 目录), ...]
-    if len(subs) == 1:
-        sub_name, folder = subs[0]
-        st.sidebar.caption(f"子策略：{sub_name}")
-    else:
-        sub_name = st.sidebar.radio("子策略", [s[0] for s in subs])
-        folder = dict(subs)[sub_name]
-
+    folder = VIEW[2]                              # 侧边栏手风琴选中的子策略目录
     # 08 大小单资金缺数据、未实现 —— 友好提示后停止
     if folder == "08_大小单资金":
         st.warning("「大小单资金」子策略缺“超大单主动净流入”数据，暂未实现（占位）。")
