@@ -25,7 +25,7 @@ from src.data_loader import load_index
 from src.backtest import run_backtest
 from src.plotting import nav_figure
 from src.runner import load_strategy
-from src.config import REPORT_PERF, PARAM_SPACE, PARAMS
+from src.config import REPORT_PERF, PARAM_SPACE, PARAMS, CATEGORIES, REPORT_RESULT_TEXT
 
 # 已实现子策略：显示名 -> 目录（08 大小单缺数据未登记）
 STRATS = {
@@ -92,8 +92,21 @@ if page == "全策略汇总":
 
 # ============================================================ 单策略详情
 else:
-    disp = st.sidebar.selectbox("选择子策略", list(STRATS.keys()))
-    folder = STRATS[disp]
+    # 侧边栏两级选择：先选研报六大维度，再选维度内子策略（1-2个）
+    dim = st.sidebar.selectbox("研报维度（六大类）", list(CATEGORIES.keys()))
+    subs = CATEGORIES[dim]                       # [(子策略名, 目录), ...]
+    if len(subs) == 1:
+        sub_name, folder = subs[0]
+        st.sidebar.caption(f"子策略：{sub_name}")
+    else:
+        sub_name = st.sidebar.radio("子策略", [s[0] for s in subs])
+        folder = dict(subs)[sub_name]
+
+    # 08 大小单资金缺数据、未实现 —— 友好提示后停止
+    if folder == "08_大小单资金":
+        st.warning("「大小单资金」子策略缺“超大单主动净流入”数据，暂未实现（占位）。")
+        st.stop()
+
     mod = get_module(folder)
     name, rkey = mod.NAME, mod.REPORT_KEY
     rep = REPORT_PERF.get(rkey, {})
@@ -150,3 +163,23 @@ else:
         for k, c in zip(feat, [c1, c2, c3, c4]):
             c.metric(k, fmt(k, m2.get(k)), f"研报 {fmt(k, rep.get(k))}", delta_color="off")
         st.caption(f"当前参数：{params}")
+
+        # ---------------- 底部小版块：研报原文结果 + 参数扫描要点 ----------------
+        st.markdown("---")
+        st.markdown("**📄 研报原文·结果描述**")
+        st.info(REPORT_RESULT_TEXT.get(name, "（研报未单列该子策略结果）"))
+
+        scan_file = ROOT / "strategies" / folder / "扫描摘要.json"
+        if scan_file.exists():
+            sc = json.load(open(scan_file, encoding="utf-8"))
+            a, d, ir = sc["年化最高"], sc["回撤最小"], sc["IR最高"]
+            st.markdown(f"**🔍 参数扫描要点**（在预设网格 {sc['网格组合数']} 组组合上遍历）")
+            st.markdown(
+                f"- **年化最高 {a['年化收益率']*100:.2f}%** ← 参数 `{a['参数']}`"
+                f"（此时 回撤 {a['最大回撤']*100:.2f}%、IR {a['年化IR']:.2f}、信号 {a['信号次数']} 次）\n"
+                f"- **最大回撤最小 {d['最大回撤']*100:.2f}%**（限年化>0）← 参数 `{d['参数']}`"
+                f"（此时 年化 {d['年化收益率']*100:.2f}%）\n"
+                f"- **年化IR最高 {ir['年化IR']:.2f}** ← 参数 `{ir['参数']}`"
+                f"（年化 {ir['年化收益率']*100:.2f}%、回撤 {ir['最大回撤']*100:.2f}%）"
+            )
+            st.caption("扫描网格见 src/config.py 的 SCAN_GRID，可扩大后重跑 `python -m src.scan`。")
