@@ -8,6 +8,8 @@
 ## 数据 / 频率
 - `中美国债利差`（中国10Y − 美国10Y）—— **日度**
 ## 方法：利差长短均线差 → > 0（利差上行）做多，< 0 空仓。
-## 参数：short_ma=20, long_ma=60（`config.PARAMS['中美利差']`，待校准）
+## 参数：short_ma=20, long_ma=60, threshold=0（`config.PARAMS['中美利差']`，待校准）
+- **threshold**：均线差与阈值比较，差 > threshold 做多、< 空仓；默认 0（即原始“跟0比”），可正可负。
+- **ma_kind**：SMA/EMA 可选（面板切换），信号定义不变，仅均线类型不同。
 ## 研报绩效（表4）：年化 10.45% ｜ 回撤 14.96% ｜ 次胜率 80% ｜ 次赔率 3.13 ｜ 14 次 ｜ 次均 76 天
 ## 状态：✅ 已实现（`load_us_cn_spread` + `ma_diff` + `sign_signal(positive_is_long=True)`）

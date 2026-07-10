@@ -49,8 +49,8 @@ PARAMS = {
     ),
     # 3.1 中美汇率：USDCNH 长短均线差；差 < threshold(阈值,默认0) 做多，> 空仓
     "中美汇率": dict(short_ma=20, long_ma=60, threshold=0.0),
-    # 3.2 中美利差：中美10Y国债利差 长短均线差；上行->1，下行->-1
-    "中美利差": dict(short_ma=20, long_ma=60),
+    # 3.2 中美利差：中美10Y国债利差 长短均线差；差 > threshold(阈值,默认0) 做多，< 空仓
+    "中美利差": dict(short_ma=20, long_ma=60, threshold=0.0),
     # 4.1 期货基差：IC基差 均线偏离度 -> 阈值 p 三态信号
     "期货基差": dict(ma_window=20, p=0.5),
     # 4.2 期权PCR：50ETF期权PCR 长短均线差；下行->1，上行->-1
@@ -70,8 +70,8 @@ PARAMS = {
 PARAM_SPACE = {
     "宏观流动性": {"smooth_window": (1, 12, 1), "zscore_window": (6, 60, 1), "p": (0.1, 2.0, 0.1)},
     "信贷预期":  {"yoy_window": (120, 504, 5), "short_ma": (5, 120, 5), "long_ma": (20, 250, 5)},
-    "中美汇率":  {"short_ma": (5, 120, 5), "long_ma": (20, 250, 5), "threshold": (-0.2, 0.2, 0.002)},
-    "中美利差":  {"short_ma": (5, 120, 5), "long_ma": (20, 250, 5)},
+    "中美汇率":  {"short_ma": (5, 120, 5), "long_ma": (20, 250, 5), "threshold": (-0.2, 0.2, 0.001)},
+    "中美利差":  {"short_ma": (5, 120, 5), "long_ma": (20, 250, 5), "threshold": (-0.6, 0.6, 0.002)},
     "期货基差":  {"ma_window": (5, 120, 5), "p": (0.1, 2.0, 0.1)},
     "期权PCR":   {"short_ma": (5, 120, 5), "long_ma": (20, 250, 5)},
     "融资融券":  {"neutral_window": (20, 250, 10), "short_ma": (5, 120, 5)},
@@ -165,4 +165,4 @@ REPORT_METHOD_TEXT = {
 }
 
 # 支持 SMA/EMA 均线类型切换的子策略（信号定义不变，仅均线类型可选）
-MA_KIND_STRATEGIES = {"中美汇率"}
+MA_KIND_STRATEGIES = {"中美汇率", "中美利差"}

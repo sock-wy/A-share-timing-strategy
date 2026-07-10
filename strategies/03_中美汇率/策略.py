@@ -14,6 +14,7 @@ from src.config import PARAMS
 
 NAME = "中美汇率"
 REPORT_KEY = "中美汇率"
+LONG_BELOW = True   # 做多条件：均线差 < 阈值（汇率下行/升值）
 
 
 def indicator(params=None):
