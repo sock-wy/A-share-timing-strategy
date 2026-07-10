@@ -135,8 +135,12 @@ else:
     st.markdown("**📄 研报原文·策略定义与建仓/平仓逻辑**")
     st.info(REPORT_METHOD_TEXT.get(name, "（研报未单列该子策略方法）"))
 
-    # ---------------- 参数旋钮 + 载入按钮 ----------------
-    st.markdown("**参数旋钮**（拖动实时重算：净值 / 绩效指标 / 逐笔交易 全部随参数更新）")
+    # 已保存的个人设置（若有则作为参数初值；下次打开自动载入）
+    saved_file = ROOT / "strategies" / folder / "我的设置.json"
+    saved = json.load(open(saved_file, encoding="utf-8")) if saved_file.exists() else {}
+
+    # ---------------- 参数（数字框 + 加减号）+ 载入按钮 ----------------
+    st.markdown("**参数**（数字框旁 −/＋ 按步长增减，也可直接输入；实时重算净值 / 指标 / 逐笔交易）")
     b1, b2, _ = st.columns([1, 1, 2])
     if recovered_file.exists() and b1.button("载入复原参数"):
         for pn, v in json.load(open(recovered_file, encoding="utf-8")).items():
@@ -153,27 +157,44 @@ else:
         key = f"{folder}_{pn}"
         is_int = float(step).is_integer() and float(lo).is_integer()
         if key not in st.session_state:
-            st.session_state[key] = defaults.get(pn, lo)
+            dflt = saved.get(pn, defaults.get(pn, lo))
+            st.session_state[key] = int(dflt) if is_int else float(dflt)
         if is_int:
-            params[pn] = c.slider(pn, int(lo), int(hi), step=int(step), key=key)
+            params[pn] = c.number_input(pn, min_value=int(lo), max_value=int(hi),
+                                        step=int(step), key=key)
         else:
-            params[pn] = c.slider(pn, float(lo), float(hi), step=float(step), key=key)
+            dec = len(str(step).split(".")[1]) if "." in str(step) else 2   # 按步长定小数位
+            params[pn] = c.number_input(pn, min_value=float(lo), max_value=float(hi),
+                                        step=float(step), key=key, format=f"%.{dec}f")
 
     # 均线类型 SMA/EMA（仅对支持的策略；信号定义不变，仅均线类型可选）
     if name in MA_KIND_STRATEGIES:
+        mk = f"{folder}_ma_kind"
+        if mk not in st.session_state:
+            st.session_state[mk] = saved.get("ma_kind", "SMA")
         params["ma_kind"] = st.radio(
             "均线类型（信号定义不变：仍是长短均线差→方向；EMA 滞后更小、更灵敏）",
-            ["SMA", "EMA"], horizontal=True, key=f"{folder}_ma_kind")
+            ["SMA", "EMA"], horizontal=True, key=mk)
     st.caption(f"当前参数：{params}")
 
     c_hold, c_date = st.columns([1, 2])
+    cf = f"{folder}_confirm"
+    if cf not in st.session_state:
+        st.session_state[cf] = int(saved.get("confirm_weeks", 1))
     confirm = c_hold.number_input(
         "信号确认周数（去抖，1=不去抖；调大→信号连续N周同向才切换仓位，过滤单周毛刺）",
-        min_value=1, max_value=12, value=1, step=1)
+        min_value=1, max_value=12, step=1, key=cf)
     dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
     dr = c_date.slider("回测时间段（拖动做样本内/外测试）", min_value=dmin, max_value=dmax,
                        value=(dmin, dmax), format="YYYY-MM-DD")
     start, end = str(dr[0]), str(dr[1])
+
+    # 保存当前参数设置 -> 我的设置.json（下次打开该策略自动载入）
+    if st.button("💾 保存当前设置（下次打开自动载入）"):
+        to_save = dict(params)
+        to_save["confirm_weeks"] = int(confirm)
+        json.dump(to_save, open(saved_file, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+        st.success(f"已保存：{to_save}")
 
     # —— 指标(均线差)在当前区间的统计：帮助选阈值、看谁多谁少 ——
     if hasattr(mod, "indicator"):

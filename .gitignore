@@ -7,3 +7,6 @@ outputs/*.html
 
 # 参数复原生成的调整日志（可复现，不入库）
 strategies/*/调整日志.csv
+
+# 面板“保存当前设置”生成的个人参数（本地偏好，不入库）
+strategies/*/我的设置.json
