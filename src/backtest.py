@@ -86,12 +86,13 @@ def _apply_min_hold(pos, min_hold):
 
 
 def run_backtest(index_df: pd.DataFrame, signal: pd.Series, name: str = "策略",
-                 min_hold_weeks: int = 1) -> dict:
+                 min_hold_weeks: int = 1, start: str = None, end: str = None) -> dict:
     """执行一个子策略的周度回测。
 
     index_df       : 基准指数日线（需含 date, close）
     signal         : 索引为 date 的信号序列（原始频率即可），>0 视为做多
     min_hold_weeks : 最短持仓周数（1=不锁定；>1 时建仓后至少持有该周数）
+    start, end     : 回测区间（默认全区间；用于样本内/外测试）
     返回 dict：weekly(周度明细), trades(逐笔), metrics(研报指标), name
     """
     rule = BACKTEST["rebalance"]
@@ -107,8 +108,8 @@ def run_backtest(index_df: pd.DataFrame, signal: pd.Series, name: str = "策略"
     pos = (wk["signal"] > 0).astype(float).shift(1).fillna(0).values
     wk["position"] = _apply_min_hold(pos, int(min_hold_weeks))
 
-    # —— 区间裁剪 ——
-    wk = wk.loc[BACKTEST["start"]: BACKTEST["end"]].copy()
+    # —— 区间裁剪（可自定义样本内/外区间）——
+    wk = wk.loc[start or BACKTEST["start"]: end or BACKTEST["end"]].copy()
 
     # —— 净值 ——
     wk["strat_ret"] = wk["position"] * wk["ret"]

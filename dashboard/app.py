@@ -12,6 +12,7 @@ A股权益择时 · 多策略回测面板（全中文）
 """
 import sys
 import json
+import datetime
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +26,8 @@ from src.data_loader import load_index
 from src.backtest import run_backtest
 from src.plotting import nav_figure
 from src.runner import load_strategy
-from src.config import REPORT_PERF, PARAM_SPACE, PARAMS, CATEGORIES, REPORT_RESULT_TEXT
+from src.config import (REPORT_PERF, PARAM_SPACE, PARAMS, CATEGORIES,
+                        REPORT_RESULT_TEXT, REPORT_METHOD_TEXT, MA_KIND_STRATEGIES)
 
 # 已实现子策略：显示名 -> 目录（08 大小单缺数据未登记）
 STRATS = {
@@ -56,12 +58,12 @@ def get_module(folder):
 
 
 @st.cache_data(show_spinner=False)
-def compute(folder, params_items, min_hold=1):
+def compute(folder, params_items, min_hold=1, start=None, end=None):
     """跑一次回测。params_items=None 用默认参数；否则用传入参数（元组化以便缓存）。"""
     mod = get_module(folder)
     params = dict(params_items) if params_items else None
     res = run_backtest(load_index("中证800"), mod.build_signal(params),
-                       name=mod.NAME, min_hold_weeks=min_hold)
+                       name=mod.NAME, min_hold_weeks=min_hold, start=start, end=end)
     return res["metrics"], res["weekly"], res["trades"], mod.NAME, mod.REPORT_KEY
 
 
@@ -129,6 +131,10 @@ else:
     scan_data = json.load(open(scan_file, encoding="utf-8")) if scan_file.exists() else {}
 
     st.subheader(name)
+    # ---------------- 研报原文·策略定义与建仓/平仓逻辑（开头摘抄）----------------
+    st.markdown("**📄 研报原文·策略定义与建仓/平仓逻辑**")
+    st.info(REPORT_METHOD_TEXT.get(name, "（研报未单列该子策略方法）"))
+
     # ---------------- 参数旋钮 + 载入按钮 ----------------
     st.markdown("**参数旋钮**（拖动实时重算：净值 / 绩效指标 / 逐笔交易 全部随参数更新）")
     b1, b2, _ = st.columns([1, 1, 2])
@@ -152,14 +158,24 @@ else:
             params[pn] = c.slider(pn, int(lo), int(hi), step=int(step), key=key)
         else:
             params[pn] = c.slider(pn, float(lo), float(hi), step=float(step), key=key)
+
+    # 均线类型 SMA/EMA（仅对支持的策略；信号定义不变，仅均线类型可选）
+    if name in MA_KIND_STRATEGIES:
+        params["ma_kind"] = st.radio(
+            "均线类型（信号定义不变：仍是长短均线差→方向；EMA 滞后更小、更灵敏）",
+            ["SMA", "EMA"], horizontal=True, key=f"{folder}_ma_kind")
     st.caption(f"当前参数：{params}")
 
-    min_hold = st.number_input(
-        "最短持仓周数（1=不锁定；调大→建仓后至少持有该周数，剔除超短交易、降低换手）",
-        min_value=1, max_value=12, value=1, step=1)
+    c_hold, c_date = st.columns([1, 2])
+    min_hold = c_hold.number_input(
+        "最短持仓周数（1=不锁定；调大剔除超短交易）", min_value=1, max_value=12, value=1, step=1)
+    dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
+    dr = c_date.slider("回测时间段（拖动做样本内/外测试）", min_value=dmin, max_value=dmax,
+                       value=(dmin, dmax), format="YYYY-MM-DD")
+    start, end = str(dr[0]), str(dr[1])
 
     # —— 当前参数回测（净值 / 指标 / 逐笔交易 都用这一次结果）——
-    m, wk, trades, _, _ = compute(folder, tuple(sorted(params.items())), int(min_hold))
+    m, wk, trades, _, _ = compute(folder, tuple(sorted(params.items())), int(min_hold), start, end)
     st.plotly_chart(nav_figure({"weekly": wk, "name": f"{name}（当前参数）"}),
                     use_container_width=True)
 
@@ -173,6 +189,7 @@ else:
             "研报": [fmt(k, rep.get(k)) for k in METRIC_ORDER],
         })
         st.dataframe(tbl, use_container_width=True, hide_index=True)
+        st.caption("研报列为全区间数值；拖动上方时间段只改变「复现」列，用于样本内/外对比。")
     with col_r:
         if "综合最相似" in scan_data:
             sim = scan_data["综合最相似"]

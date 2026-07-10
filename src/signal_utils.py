@@ -24,8 +24,14 @@ def ma_deviation(s: pd.Series, window: int) -> pd.Series:
     return (s - ma) / ma
 
 
-def ma_diff(s: pd.Series, short: int, long: int) -> pd.Series:
-    """长短均线差：短均线 - 长均线。>0 表示上行动能。"""
+def ma_diff(s: pd.Series, short: int, long: int, kind: str = "SMA") -> pd.Series:
+    """长短均线差：短均线 - 长均线。>0 表示上行动能。
+
+    kind='SMA' 简单移动平均（等权）；'EMA' 指数移动平均（近端加权，滞后更小）。
+    信号定义不变——仍是“长短均线差 → 方向”，只是均线类型可选。
+    """
+    if kind == "EMA":
+        return s.ewm(span=short, adjust=False).mean() - s.ewm(span=long, adjust=False).mean()
     return s.rolling(short, min_periods=1).mean() - s.rolling(long, min_periods=1).mean()
 
 
