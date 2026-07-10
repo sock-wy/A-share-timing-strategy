@@ -10,6 +10,8 @@
 ## 数据 / 频率
 - `上证50认沽认购持仓量比`（认沽持仓/认购持仓）—— **日度**（header 在第 5 行）
 ## 方法：PCR 长短均线差 → 下行做多（`sign_signal(positive_is_long=False)`）。
-## 参数：short_ma=20, long_ma=60（`config.PARAMS['期权PCR']`，待校准）
+## 参数：short_ma=20, long_ma=60, threshold=0（`config.PARAMS['期权PCR']`，待校准）
+- **threshold**：均线差 < threshold 做多（PCR下行）、> 空仓；默认0，可正负，面板步长0.005。
+- **ma_kind**：SMA/EMA 可选；信号定义不变，仅均线类型不同。
 ## 研报绩效（表6）：年化 9.86% ｜ 回撤 22.11% ｜ 次胜率 74.58% ｜ 次赔率 1.05 ｜ 58 次 ｜ 次均 23 天
 ## 状态：✅ 已实现（需写 `load_pcr`：PCR = 认沽持仓量 / 认购持仓量）
