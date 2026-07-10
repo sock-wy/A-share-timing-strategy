@@ -58,12 +58,12 @@ def get_module(folder):
 
 
 @st.cache_data(show_spinner=False)
-def compute(folder, params_items, min_hold=1, start=None, end=None):
+def compute(folder, params_items, confirm=1, start=None, end=None):
     """跑一次回测。params_items=None 用默认参数；否则用传入参数（元组化以便缓存）。"""
     mod = get_module(folder)
     params = dict(params_items) if params_items else None
     res = run_backtest(load_index("中证800"), mod.build_signal(params),
-                       name=mod.NAME, min_hold_weeks=min_hold, start=start, end=end)
+                       name=mod.NAME, confirm_weeks=confirm, start=start, end=end)
     return res["metrics"], res["weekly"], res["trades"], mod.NAME, mod.REPORT_KEY
 
 
@@ -167,15 +167,16 @@ else:
     st.caption(f"当前参数：{params}")
 
     c_hold, c_date = st.columns([1, 2])
-    min_hold = c_hold.number_input(
-        "最短持仓周数（1=不锁定；调大剔除超短交易）", min_value=1, max_value=12, value=1, step=1)
+    confirm = c_hold.number_input(
+        "信号确认周数（去抖，1=不去抖；调大→信号连续N周同向才切换仓位，过滤单周毛刺）",
+        min_value=1, max_value=12, value=1, step=1)
     dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
     dr = c_date.slider("回测时间段（拖动做样本内/外测试）", min_value=dmin, max_value=dmax,
                        value=(dmin, dmax), format="YYYY-MM-DD")
     start, end = str(dr[0]), str(dr[1])
 
     # —— 当前参数回测（净值 / 指标 / 逐笔交易 都用这一次结果）——
-    m, wk, trades, _, _ = compute(folder, tuple(sorted(params.items())), int(min_hold), start, end)
+    m, wk, trades, _, _ = compute(folder, tuple(sorted(params.items())), int(confirm), start, end)
     st.plotly_chart(nav_figure({"weekly": wk, "name": f"{name}（当前参数）"}),
                     use_container_width=True)
 

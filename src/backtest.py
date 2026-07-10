@@ -62,37 +62,42 @@ def extract_trades(wk: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(trades)
 
 
-def _apply_min_hold(pos, min_hold):
-    """最短持仓锁定：一旦建多仓，至少持有 min_hold 周（期间翻空也不平）。
+def _apply_debounce(long_raw, confirm):
+    """信号去抖（双向状态机）：原始信号连续 confirm 周同向，才切换仓位。
 
-    把每段做多区间向后延长到至少 min_hold 周，从而剔除超短交易、降低换手。
-    min_hold<=1 时原样返回（默认行为）。
+    · 空仓时，做多信号连续 ≥confirm 周 -> 建仓；
+    · 满仓时，空仓信号连续 ≥confirm 周 -> 平仓；
+    · 否则保持当前仓位。
+    过滤掉单周信号毛刺（双向），confirm<=1 时原样返回（不去抖）。因果、无未来函数。
+
+    long_raw : 0/1 数组（1=当周信号做多）；返回去抖后的 0/1 仓位意向数组。
     """
-    if min_hold <= 1:
-        return pos
-    pos = pos.copy()
-    n, i = len(pos), 0
-    while i < n:
-        if pos[i] == 1:
-            j = i
-            while j + 1 < n and pos[j + 1] == 1:
-                j += 1
-            end = min(max(j, i + min_hold - 1), n - 1)   # 延长到至少 min_hold 周
-            pos[i:end + 1] = 1
-            i = end + 1
-        else:
-            i += 1
-    return pos
+    long_raw = np.asarray(long_raw, dtype=int)
+    n = len(long_raw)
+    if confirm <= 1 or n == 0:
+        return long_raw.astype(float)
+    out = np.zeros(n)
+    state, run, prev = 0, 0, None
+    for t in range(n):
+        v = long_raw[t]
+        run = run + 1 if v == prev else 1          # 当前值已连续 run 周
+        prev = v
+        if v == 1 and state == 0 and run >= confirm:
+            state = 1                              # 做多确认 -> 建仓
+        elif v == 0 and state == 1 and run >= confirm:
+            state = 0                              # 空仓确认 -> 平仓
+        out[t] = state
+    return out
 
 
 def run_backtest(index_df: pd.DataFrame, signal: pd.Series, name: str = "策略",
-                 min_hold_weeks: int = 1, start: str = None, end: str = None) -> dict:
+                 confirm_weeks: int = 1, start: str = None, end: str = None) -> dict:
     """执行一个子策略的周度回测。
 
-    index_df       : 基准指数日线（需含 date, close）
-    signal         : 索引为 date 的信号序列（原始频率即可），>0 视为做多
-    min_hold_weeks : 最短持仓周数（1=不锁定；>1 时建仓后至少持有该周数）
-    start, end     : 回测区间（默认全区间；用于样本内/外测试）
+    index_df      : 基准指数日线（需含 date, close）
+    signal        : 索引为 date 的信号序列（原始频率即可），>0 视为做多
+    confirm_weeks : 信号确认周数（去抖）；1=不去抖；>1 时信号需连续该周数同向才切换仓位
+    start, end    : 回测区间（默认全区间；用于样本内/外测试）
     返回 dict：weekly(周度明细), trades(逐笔), metrics(研报指标), name
     """
     rule = BACKTEST["rebalance"]
@@ -104,9 +109,10 @@ def run_backtest(index_df: pd.DataFrame, signal: pd.Series, name: str = "策略"
     aligned.index = wk.index
     wk["signal"] = aligned.values
 
-    # —— 仓位：信号>0满仓(1)、<=0空仓(0)；本周信号持有下周 ——
-    pos = (wk["signal"] > 0).astype(float).shift(1).fillna(0).values
-    wk["position"] = _apply_min_hold(pos, int(min_hold_weeks))
+    # —— 仓位：信号>0做多；先对周信号去抖，再平移一周持有 ——
+    long_raw = (wk["signal"] > 0).astype(int).values
+    debounced = _apply_debounce(long_raw, int(confirm_weeks))
+    wk["position"] = pd.Series(debounced, index=wk.index).shift(1).fillna(0)
 
     # —— 区间裁剪（可自定义样本内/外区间）——
     wk = wk.loc[start or BACKTEST["start"]: end or BACKTEST["end"]].copy()
