@@ -16,12 +16,19 @@ NAME = "中美汇率"
 REPORT_KEY = "中美汇率"
 
 
-def build_signal(params=None):
+def indicator(params=None):
+    """原始择时指标：长短均线差（短均线 - 长均线）。索引为 date，供阈值/统计使用。"""
     p = params or PARAMS[NAME]
     s = load_usdcnh().set_index("date")["close"]
-    # 信号定义不变：仍是长短均线差 -> 方向；仅均线类型可选 SMA/EMA（默认 SMA）
-    direction = ma_diff(s, p["short_ma"], p["long_ma"], kind=p.get("ma_kind", "SMA"))
-    # 均线差<0 表示汇率下行/人民币升值 -> 做多，故 positive_is_long=False
+    return ma_diff(s, p["short_ma"], p["long_ma"], kind=p.get("ma_kind", "SMA"))
+
+
+def build_signal(params=None):
+    p = params or PARAMS[NAME]
+    # 均线差与阈值比较：ma_diff < threshold（汇率更明确下行/升值）-> 做多；> threshold -> 空仓。
+    # threshold 默认 0（即原始“跟0比”的口径），可正可负。
+    direction = indicator(params) - p.get("threshold", 0.0)
+    # direction<0 表示均线差低于阈值 -> 做多，故 positive_is_long=False
     signal = sign_signal(direction, positive_is_long=False)
     signal.name = "signal"
     return signal

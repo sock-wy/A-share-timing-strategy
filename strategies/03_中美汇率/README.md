@@ -9,6 +9,8 @@
 - `离岸人民币汇率`（USDCNH 最新价）—— **日度**
 ## 方法
 USDCNH 长短均线差 → 均线差 < 0（汇率下行/升值）做多，> 0 空仓（`sign_signal(..., positive_is_long=False)`）。
-## 参数：short_ma=20, long_ma=60（`config.PARAMS['中美汇率']`，待校准）
+## 参数：short_ma=20, long_ma=60, threshold=0（`config.PARAMS['中美汇率']`，待校准）
+- **threshold**：均线差与阈值比较，差 < threshold 做多、> 空仓；默认 0（即原始“跟0比”），可正可负。
+- **ma_kind**：SMA/EMA 可选（面板切换），信号定义不变，仅均线类型不同。
 ## 研报绩效（表3）：年化 11.23% ｜ 回撤 34.44% ｜ 次胜率 73.08% ｜ 次赔率 1.52 ｜ 25 次 ｜ 次均 54 天
 ## 状态：✅ 已实现（可仿照 01/02：`load_usdcnh` + `ma_diff` + `sign_signal(positive_is_long=False)`）

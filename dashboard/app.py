@@ -175,6 +175,17 @@ else:
                        value=(dmin, dmax), format="YYYY-MM-DD")
     start, end = str(dr[0]), str(dr[1])
 
+    # —— 指标(均线差)在当前区间的统计：帮助选阈值、看谁多谁少 ——
+    if hasattr(mod, "indicator"):
+        ind = mod.indicator(params).loc[start:end].dropna()
+        if len(ind):
+            thr = params.get("threshold", 0.0)
+            who = "高于" if ind.mean() > 0 else "低于"
+            st.caption(
+                f"📐 当前区间「均线差(短−长)」均值 {ind.mean():+.4f}，标准差 {ind.std():.4f}，"
+                f"区间 [{ind.min():+.3f}, {ind.max():+.3f}]；短均线平均**{who}**长均线（差>0 占比 {(ind>0).mean()*100:.0f}%）。"
+                f"当前阈值 {thr:+.3f} → 做多占比（差<阈值）{(ind < thr).mean()*100:.0f}%。")
+
     # —— 当前参数回测（净值 / 指标 / 逐笔交易 都用这一次结果）——
     m, wk, trades, _, _ = compute(folder, tuple(sorted(params.items())), int(confirm), start, end)
     st.plotly_chart(nav_figure({"weekly": wk, "name": f"{name}（当前参数）"}),
