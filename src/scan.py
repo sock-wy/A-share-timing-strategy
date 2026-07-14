@@ -41,10 +41,17 @@ def grid_scan(mod, grid):
     return pd.DataFrame(rows), keys
 
 
+def _val(x):
+    """数值规整；字符串(如 ma_kind)原样返回。"""
+    if isinstance(x, str):
+        return x
+    return int(x) if float(x).is_integer() else round(float(x), 4)
+
+
 def summarize(df, keys):
     """从扫描结果里提炼要点。"""
     def pack(row):
-        return {"参数": {k: (int(row[k]) if float(row[k]).is_integer() else float(row[k])) for k in keys},
+        return {"参数": {k: _val(row[k]) for k in keys},
                 "年化收益率": float(row["年化收益率"]), "年化IR": float(row["年化IR"]),
                 "最大回撤": float(row["最大回撤"]), "信号次数": int(row["信号次数"])}
 

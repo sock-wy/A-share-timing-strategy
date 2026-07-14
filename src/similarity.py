@@ -48,6 +48,8 @@ def distance(m, rep):
 
 
 def _num(x):
+    if isinstance(x, str):        # 字符串参数(如 ma_kind)原样返回
+        return x
     return int(x) if float(x).is_integer() else round(float(x), 4)
 
 
@@ -82,7 +84,13 @@ def find_most_similar(mod, grid=None, refine=True):
             best = (params, d, m)
 
     if refine:
-        local = {k: _local_candidates(best[0][k], grid[k]) for k in keys}
+        # 仅对数值参数做局部细化；字符串参数(如 ma_kind)固定为最优值
+        local = {}
+        for k in keys:
+            if all(isinstance(v, (int, float)) for v in grid[k]):
+                local[k] = _local_candidates(best[0][k], grid[k])
+            else:
+                local[k] = [best[0][k]]
         for combo in itertools.product(*[local[k] for k in keys]):
             params = dict(zip(keys, combo))
             m, d = ev(params)
