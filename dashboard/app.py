@@ -24,7 +24,8 @@ from src.backtest import run_backtest
 from src.plotting import nav_figure
 from src.runner import load_strategy
 from src.config import (REPORT_PERF, PARAM_SPACE, PARAMS, CATEGORIES,
-                        REPORT_RESULT_TEXT, REPORT_METHOD_TEXT, MA_KIND_STRATEGIES)
+                        REPORT_RESULT_TEXT, REPORT_METHOD_TEXT, MA_KIND_STRATEGIES,
+                        MATH_EXPLAIN)
 
 STRATS = {
     "01 宏观流动性": "01_宏观流动性", "02 信贷预期": "02_信贷预期",
@@ -168,6 +169,9 @@ else:
     st.subheader(name)
     st.markdown("**📄 研报原文·策略定义与建仓/平仓逻辑**")
     st.info(REPORT_METHOD_TEXT.get(name, "（研报未单列该子策略方法）"))
+    if name in MATH_EXPLAIN:
+        with st.expander("📐 数学逻辑解释（点开）"):
+            st.markdown(MATH_EXPLAIN[name])
 
     # ---------------- 载入按钮（在参数输入之前，设 session_state 后 rerun 生效）----------------
     st.markdown("**参数存档**：3 组可保存/载入你调好的参数（**组1** 会用于全策略汇总）")
@@ -237,19 +241,24 @@ else:
             write_groups(folder, data)
             st.success(f"已保存到 {slot}：{g}")
 
-    # —— 指标(均线差)统计：帮助选阈值 ——
+    # —— 指标实际分布统计（均值/std/集中区间），并按信号类型给出触发/做多占比 ——
     if hasattr(mod, "indicator"):
         ind = mod.indicator(params).loc[start:end].dropna()
         if len(ind):
-            thr = params.get("threshold", 0.0)
-            who = "高于" if ind.mean() > 0 else "低于"
-            long_below = getattr(mod, "LONG_BELOW", True)
-            long_pct = (ind < thr).mean() * 100 if long_below else (ind > thr).mean() * 100
-            cond = "差<阈值" if long_below else "差>阈值"
-            st.caption(
-                f"📐 当前区间「均线差(短−长)」均值 {ind.mean():+.4f}，标准差 {ind.std():.4f}，"
-                f"区间 [{ind.min():+.3f}, {ind.max():+.3f}]；短均线平均{who}长均线（差>0 占比 {(ind>0).mean()*100:.0f}%）。"
-                f"当前阈值 {thr:+.3f} → 做多占比（{cond}）{long_pct:.0f}%。")
+            iname = getattr(mod, "INDICATOR_NAME", "均线差(短−长)")
+            q15, q85 = ind.quantile([0.15, 0.85])
+            txt = (f"📐「{iname}」区间统计：均值 **{ind.mean():+.4f}**，标准差 {ind.std():.4f}，"
+                   f"全距 [{ind.min():+.3f}, {ind.max():+.3f}]，中央70%集中在 [{q15:+.4f}, {q85:+.4f}]，"
+                   f">0 占比 {(ind>0).mean()*100:.0f}%")
+            if hasattr(mod, "LONG_BELOW"):                 # 方向型阈值策略
+                thr = params.get("threshold", 0.0)
+                lb = mod.LONG_BELOW
+                pct = (ind < thr).mean() * 100 if lb else (ind > thr).mean() * 100
+                txt += f"；当前阈值 {thr:+.4f} → 做多占比（{'差<阈值' if lb else '差>阈值'}）{pct:.0f}%"
+            elif "p" in params:                            # 对称阈值 p 策略（|指标|>p 触发）
+                pv = params["p"]
+                txt += f"；当前 p={pv:.2f} → |指标|>p 触发占比 {(ind.abs() > pv).mean()*100:.0f}%"
+            st.caption(txt + "。")
 
     # —— 回测（当前参数）——
     m, wk, trades, _, _ = compute(folder, tuple(sorted(params.items())), int(confirm), start, end)

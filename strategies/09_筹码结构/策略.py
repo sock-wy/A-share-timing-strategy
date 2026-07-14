@@ -22,6 +22,23 @@ from src.config import PARAMS
 
 NAME = "筹码结构"
 REPORT_KEY = "筹码结构"
+INDICATOR_NAME = "赚钱效应(现价/均成本−1)"   # 面板统计用：>0 市场盈利、<0 亏损
+
+
+def _load_chip():
+    px = load_index("中证800")[["date", "high", "low", "close"]].set_index("date")
+    tn = load_turnover("中证800").set_index("date")["turnover"]
+    df = px.join(tn, how="inner").dropna()
+    res, sup, prof = _chip_distribution(
+        df["high"].values, df["low"].values, df["close"].values,
+        (df["turnover"] / 100).values)
+    return df, res, sup, prof
+
+
+def indicator(params=None):
+    """原始择时指标之一：赚钱效应（现价相对平均持仓成本的收益率）。"""
+    df, res, sup, prof = _load_chip()
+    return pd.Series(prof, index=df.index)
 
 
 def _chip_distribution(high, low, close, turn):
@@ -54,13 +71,7 @@ def _chip_distribution(high, low, close, turn):
 
 def build_signal(params=None):
     p = params or PARAMS[NAME]
-    px = load_index("中证800")[["date", "high", "low", "close"]].set_index("date")
-    tn = load_turnover("中证800").set_index("date")["turnover"]
-    df = px.join(tn, how="inner").dropna()
-
-    res, sup, prof = _chip_distribution(
-        df["high"].values, df["low"].values, df["close"].values,
-        (df["turnover"] / 100).values)                        # 换手率 %→分数
+    df, res, sup, prof = _load_chip()
 
     res_z = rolling_zscore(pd.Series(res, index=df.index), p["zscore_window"])
     sup_z = rolling_zscore(pd.Series(sup, index=df.index), p["zscore_window"])

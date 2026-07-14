@@ -15,12 +15,19 @@ from src.config import PARAMS
 
 NAME = "期货基差"
 REPORT_KEY = "期货基差"
+INDICATOR_NAME = "基差偏离度(Zscore)"   # 面板统计用；p 作用在它上（|偏离度|>p 触发）
+
+
+def indicator(params=None):
+    """原始择时指标：基差率的滚动 Zscore 偏离度。近似 N(0,1)。"""
+    p = params or PARAMS[NAME]
+    s = load_ic_basis().set_index("date")["basis_rate"]
+    return rolling_zscore(s, p["ma_window"])
 
 
 def build_signal(params=None):
     p = params or PARAMS[NAME]
-    s = load_ic_basis().set_index("date")["basis_rate"]
-    deviation = rolling_zscore(s, p["ma_window"])              # 均线偏离度（标准化）
-    signal = threshold_signal(deviation, p["p"])              # 向上偏离做多、向下偏离空仓
+    deviation = indicator(params)                             # 均线偏离度（标准化）
+    signal = threshold_signal(deviation, p["p"])             # 向上偏离做多、向下偏离空仓
     signal.name = "signal"
     return signal

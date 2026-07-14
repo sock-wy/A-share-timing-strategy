@@ -17,15 +17,17 @@ from src.config import PARAMS
 
 NAME = "长端动量"
 REPORT_KEY = "长端动量"
+INDICATOR_NAME = "长端动量(累计涨跌幅%)"   # 面板统计用
+LONG_BELOW = False   # 做多条件：动量 > 0（阈值默认0）
 
 
-def build_signal(params=None):
+def indicator(params=None):
+    """原始择时指标：剔除低振幅交易日后的累计涨跌幅（长端动量）。"""
     p = params or PARAMS[NAME]
     df = load_index("中证800")[["date", "pct_chg", "amplitude"]].set_index("date").dropna()
     amp = df["amplitude"].values
     ret = df["pct_chg"].values
     n, lb, q = len(df), p["lookback"], p["amp_quantile"]
-
     momentum = np.full(n, np.nan)
     for t in range(lb - 1, n):
         a = amp[t - lb + 1: t + 1]
@@ -33,7 +35,10 @@ def build_signal(params=None):
         thr = np.nanquantile(a, q)                    # 窗口内振幅分位阈值
         keep = a >= thr                               # 只保留高振幅交易日
         momentum[t] = np.nansum(r[keep])              # 剔除低振幅日后的累计涨跌幅
+    return pd.Series(momentum, index=df.index)
 
-    signal = sign_signal(pd.Series(momentum, index=df.index), positive_is_long=True)
+
+def build_signal(params=None):
+    signal = sign_signal(indicator(params), positive_is_long=True)
     signal.name = "signal"
     return signal
