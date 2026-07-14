@@ -1,0 +1,4 @@
+{
+  "组1": {"short_ma": 20, "long_ma": 60, "threshold": -0.05, "ma_kind": "EMA", "confirm_weeks": 1},
+  "备注": "EMA(20,60) 阈值-0.05：年化~10.9% IR0.72，接近研报10.45%"
+}
