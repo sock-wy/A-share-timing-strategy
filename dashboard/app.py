@@ -163,6 +163,8 @@ else:
     space = PARAM_SPACE.get(name, {})
     defaults = PARAMS.get(name, {})
     recovered_file = ROOT / "strategies" / folder / "复原参数.json"
+    scan_file = ROOT / "strategies" / folder / "扫描摘要.json"
+    scan_data = json.load(open(scan_file, encoding="utf-8")) if scan_file.exists() else {}
     groups = load_groups(folder)
     g1 = groups.get("组1", {})
 
@@ -175,7 +177,7 @@ else:
 
     # ---------------- 载入按钮（在参数输入之前，设 session_state 后 rerun 生效）----------------
     st.markdown("**参数存档**：3 组可保存/载入你调好的参数（**组1** 会用于全策略汇总）")
-    lc = st.columns(4)
+    lc = st.columns(5)
     for i in range(3):
         slot = f"组{i+1}"
         if lc[i].button(f"📂 载入{slot}", key=f"load{i}_{folder}", disabled=slot not in groups,
@@ -189,6 +191,15 @@ else:
         for pn, v in json.load(open(recovered_file, encoding="utf-8")).items():
             st.session_state[f"{folder}_{pn}"] = v
         st.rerun()
+    # 🎯 一键载入“最相似参数”（年化&回撤权重×2 的综合距离最小）
+    if "综合最相似" in scan_data and lc[4].button("🎯 载入最相似", key=f"loadsim_{folder}",
+                                                use_container_width=True):
+        for pn, v in scan_data["综合最相似"]["参数"].items():
+            st.session_state[f"{folder}_{pn}"] = v
+        st.rerun()
+    if "综合最相似" in scan_data:
+        st.caption("最相似 = 在参数网格上，使各指标相对偏差 |复现−研报|/|研报| 的加权平均最小的一组"
+                   "（年化收益率、最大回撤 权重×2，信号次数/次均天数/次胜率/次赔率 各×1）。")
 
     # ---------------- 参数（数字框 + 加减号）----------------
     st.markdown("**参数**（数字框旁 −/＋ 按步长增减，也可直接输入；实时重算净值 / 指标 / 逐笔交易）")
