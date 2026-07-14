@@ -1,0 +1,7 @@
+{
+  "组1": {
+    "zscore_window": 185,
+    "p": 0.6,
+    "confirm_weeks": 1
+  }
+}

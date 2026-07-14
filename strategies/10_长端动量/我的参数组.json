@@ -1,0 +1,7 @@
+{
+  "组1": {
+    "lookback": 135,
+    "amp_quantile": 0.7,
+    "confirm_weeks": 1
+  }
+}

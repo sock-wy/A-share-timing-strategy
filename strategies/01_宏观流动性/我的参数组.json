@@ -1,0 +1,8 @@
+{
+  "组1": {
+    "smooth_window": 2,
+    "zscore_window": 44,
+    "p": 0.3,
+    "confirm_weeks": 1
+  }
+}

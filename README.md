@@ -50,6 +50,10 @@ python strategies/01_宏观流动性/参数复原.py  # 01 已配置；02-10 见
 python -m src.scan          # 年化最高/回撤最小/IR最高 各在何参数
 python -m src.similarity    # 多指标综合最相似（年化&回撤权重×2）的参数组合
 ```
+**一键全自动校准**（均线差类同搜 SMA+EMA+阈值，最优写入各策略「组1」，打印拟合排行含样本内外）：
+```bash
+python -m src.autofit       # 全部策略自动校准到最贴研报，无需手调
+```
 **交互面板**（全中文，含参数旋钮实时出曲线）：
 ```bash
 streamlit run dashboard/app.py
