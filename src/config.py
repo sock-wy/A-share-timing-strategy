@@ -52,8 +52,8 @@ PARAMS = {
     "中美汇率": dict(short_ma=20, long_ma=60, threshold=0.0),
     # 3.2 中美利差：中美10Y国债利差 长短均线差；差 > threshold(阈值,默认0) 做多，< 空仓
     "中美利差": dict(short_ma=20, long_ma=60, threshold=0.0),
-    # 4.1 期货基差：IC基差 均线偏离度 -> 阈值 p 三态信号
-    "期货基差": dict(ma_window=20, p=0.5),
+    # 4.1 期货基差：IC基差 均线偏离度 -> 阈值 p 三态信号；smooth_days=基差平滑天数(1=原始)
+    "期货基差": dict(ma_window=20, p=0.5, smooth_days=1),
     # 4.2 期权PCR：50ETF期权PCR 长短均线差；差 < threshold(PCR下行) 做多
     "期权PCR": dict(short_ma=20, long_ma=60, threshold=0.0),
     # 5.1 融资融券：买盘强度中性化卖盘残差 -> 短期均值 -> 双态信号
@@ -75,7 +75,7 @@ PARAM_SPACE = {
                  "threshold": (-0.01, 0.01, 0.0001)},
     "中美汇率":  {"short_ma": (5, 120, 5), "long_ma": (20, 250, 5), "threshold": (-0.2, 0.2, 0.001)},
     "中美利差":  {"short_ma": (5, 120, 5), "long_ma": (20, 250, 5), "threshold": (-0.6, 0.6, 0.001)},
-    "期货基差":  {"ma_window": (5, 400, 5), "p": (0.05, 3.0, 0.02)},
+    "期货基差":  {"smooth_days": (1, 20, 1), "ma_window": (5, 400, 5), "p": (0.05, 3.0, 0.02)},
     "期权PCR":   {"short_ma": (5, 120, 5), "long_ma": (20, 250, 5), "threshold": (-0.4, 0.4, 0.005)},
     "融资融券":  {"neutral_window": (20, 250, 10), "short_ma": (5, 120, 5)},
     "大小单资金": {"short_ma": (5, 120, 5), "long_ma": (20, 250, 5)},
@@ -149,7 +149,7 @@ SCAN_GRID = {
                   "threshold": [-0.04, -0.02, 0.0, 0.02, 0.04]},
     "中美利差":   {"short_ma": [10, 20, 40], "long_ma": [40, 60, 90, 135], "ma_kind": ["SMA", "EMA"],
                   "threshold": [-0.10, -0.05, 0.0, 0.05, 0.10]},
-    "期货基差":   {"ma_window": [10, 20, 40, 60], "p": [0.3, 0.5, 0.7, 1.0, 1.5]},
+    "期货基差":   {"smooth_days": [1, 5], "ma_window": [10, 20, 40, 60], "p": [0.3, 0.5, 0.7, 1.0, 1.5]},
     "期权PCR":    {"short_ma": [10, 20, 40], "long_ma": [30, 60, 90], "ma_kind": ["SMA", "EMA"],
                   "threshold": [-0.10, -0.05, 0.0, 0.05, 0.10]},
     "融资融券":   {"neutral_window": [40, 60, 90, 120], "short_ma": [10, 20, 40, 60]},

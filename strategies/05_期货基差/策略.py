@@ -19,9 +19,15 @@ INDICATOR_NAME = "基差偏离度(Zscore)"   # 面板统计用；p 作用在它�
 
 
 def indicator(params=None):
-    """原始择时指标：基差率的滚动 Zscore 偏离度。近似 N(0,1)。"""
+    """原始择时指标：基差率(可选平滑)的滚动 Zscore 偏离度。近似 N(0,1)。
+
+    smooth_days>1 时先对基差率做 smooth_days 日均值平滑（抑制换月锯齿噪音），默认1=原始。
+    """
     p = params or PARAMS[NAME]
     s = load_ic_basis().set_index("date")["basis_rate"]
+    sd = int(p.get("smooth_days", 1))
+    if sd > 1:
+        s = s.rolling(sd, min_periods=1).mean()
     return rolling_zscore(s, p["ma_window"])
 
 
