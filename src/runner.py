@@ -13,10 +13,14 @@ from .plotting import build_report
 from .config import BACKTEST, ROOT
 
 
-def load_strategy(folder):
-    """按目录名加载该子策略的 策略.py 模块（folder 如 '01_宏观流动性'）。"""
-    path = ROOT / "strategies" / folder / "策略.py"
-    spec = importlib.util.spec_from_file_location(f"策略_{folder}", path)
+def load_strategy(folder, filename="策略.py"):
+    """按目录名加载该子策略模块（folder 如 '01_宏观流动性'）。
+
+    filename 默认 '策略.py'（原版）；传 '策略进阶.py' 可加载同目录下的进阶版构造，
+    二者互不影响（09/10 各有原版与进阶版两套建仓/平仓逻辑）。
+    """
+    path = ROOT / "strategies" / folder / filename
+    spec = importlib.util.spec_from_file_location(f"{Path(filename).stem}_{folder}", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
