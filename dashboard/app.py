@@ -31,7 +31,7 @@ from src.runner import load_strategy, build_signal_for
 from src.config import (REPORT_PERF, PARAM_SPACE, PARAMS, CATEGORIES,
                         REPORT_RESULT_TEXT, REPORT_METHOD_TEXT, MA_KIND_STRATEGIES,
                         MATH_EXPLAIN, ADVANCED, BENCH, TARGETS,
-                        DATA_MODE_STRATEGIES, DATA_MODE_OPTIONS)
+                        DATA_MODE_STRATEGIES, DATA_MODE_OPTIONS, PARAM_HELP)
 
 STRATS = {
     "01 宏观流动性": "01_宏观流动性", "02 信贷预期": "02_信贷预期",
@@ -227,9 +227,10 @@ def render_strategy(folder, target, variant=None):
                    "（年化收益率、最大回撤 权重×2，其余各×1）。")
 
     # ---------------- 参数（数字框 + 加减号）----------------
-    st.markdown("**参数**（数字框旁 −/＋ 按步长增减，也可直接输入；实时重算净值 / 指标 / 逐笔交易）")
+    st.markdown("**参数**（数字框旁 −/＋ 按步长增减，也可直接输入；每个旋钮下方小字=它在本策略里的作用）")
     cols = st.columns(max(1, len(space)))
     params = {}
+    help_map = PARAM_HELP.get(name, {})
     for (pn, (lo, hi, step)), c in zip(space.items(), cols):
         key = f"{kpre}_{pn}"
         is_int = float(step).is_integer() and float(lo).is_integer()
@@ -243,6 +244,8 @@ def render_strategy(folder, target, variant=None):
             dec = len(str(step).split(".")[1]) if "." in str(step) else 2
             params[pn] = c.number_input(pn, min_value=float(lo), max_value=float(hi),
                                         step=float(step), key=key, format=f"%.{dec}f")
+        if pn in help_map:                                   # 旋钮下方注明作用
+            c.caption(help_map[pn])
 
     if name in MA_KIND_STRATEGIES:
         mk = f"{kpre}_ma_kind"
