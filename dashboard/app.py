@@ -99,16 +99,26 @@ def compute(folder, params_items, confirm=1, start=None, end=None,
     return res["metrics"], res["weekly"], res["trades"], mod.NAME, mod.REPORT_KEY
 
 
+def summary_variant(folder, data):
+    """返回被选为「用于汇总」的进阶变体 dict；无则 None。兼容旧键 用进阶汇总=True。"""
+    variants = ADVANCED.get(folder, [])
+    name = data.get("汇总用变体")
+    if not name and data.get("用进阶汇总") and variants:
+        name = variants[0]["name"]
+    return next((v for v in variants if v["name"] == name), None)
+
+
 def compute_group1(folder, target=BENCH):
-    """汇总用复现：09/10 开启「用进阶汇总」-> 进阶版进阶组1；否则原版组1（非基准标的回退复用中证800组1）。"""
+    """汇总用复现：若选了某进阶变体 -> 该变体「<gpre>组1」；否则原版组1（非基准标的回退复用中证800组1）。"""
     data = load_groups(folder, target)
-    adv = ADVANCED.get(folder)
-    if adv and data.get("用进阶汇总"):
-        g = data.get("进阶组1") or seed_group(folder, target, "进阶组1")
+    v = summary_variant(folder, data)
+    if v:
+        gpre = v["gpre"]
+        g = data.get(f"{gpre}组1") or seed_group(folder, target, f"{gpre}组1")
         confirm = int(g.get("confirm_weeks", 1)) if g else 1
-        params = {k: v for k, v in g.items() if k != "confirm_weeks"} if g else {}
+        params = {k: val for k, val in g.items() if k != "confirm_weeks"} if g else {}
         items = tuple(sorted(params.items())) if params else None
-        return compute(folder, items, confirm, filename=adv["file"], target=target)
+        return compute(folder, items, confirm, filename=v["file"], target=target)
     g = data.get("组1") or (seed_group(folder, target, "组1") if target != BENCH else None)
     if g:
         confirm = int(g.get("confirm_weeks", 1))
@@ -150,23 +160,25 @@ for _cat, _subs in CATEGORIES.items():
                          type="primary" if _folder == _cur else "secondary"):
                 st.session_state.view = ("strategy", _sname, _folder, tgt)
                 st.rerun()
-            if _folder in ADVANCED:
-                if st.button(f"   └ 🚀 {ADVANCED[_folder]['name']}", key=f"navadv_{tgt}_{_folder}",
+            for _v in ADVANCED.get(_folder, []):
+                if st.button(f"   └ 🚀 {_v['label']}", key=f"navadv_{tgt}_{_folder}_{_v['name']}",
                              use_container_width=True):
-                    st.session_state.view = ("advanced", ADVANCED[_folder]["name"], _folder, tgt)
+                    st.session_state.view = ("advanced", _v["name"], _folder, tgt)
                     st.rerun()
 
 
 # ============================================================ 单策略渲染（原版/进阶版/多标的共用）
-def render_strategy(folder, filename, is_advanced, target):
+def render_strategy(folder, target, variant=None):
+    is_advanced = variant is not None
+    filename = variant["file"] if is_advanced else "策略.py"
+    gpre = variant["gpre"] if is_advanced else ""
     mod = get_module(folder, filename)
     name, rkey = mod.NAME, mod.REPORT_KEY
     rep = REPORT_PERF.get(rkey, {})
     is_bench = (target == BENCH)
     space = PARAM_SPACE.get(name, {})
     defaults = PARAMS.get(name, {})
-    kpre = f"{target}|{folder}" + ("@adv" if is_advanced else "")
-    gpre = "进阶" if is_advanced else ""
+    kpre = f"{target}|{folder}" + (f"@{gpre}" if is_advanced else "")
     scan_file = ROOT / "strategies" / folder / ("扫描摘要_进阶.json" if is_advanced else "扫描摘要.json")
     scan_data = json.load(open(scan_file, encoding="utf-8")) if (is_bench and scan_file.exists()) else {}
     recovered_file = None if (is_advanced or not is_bench) else ROOT / "strategies" / folder / "复原参数.json"
@@ -276,26 +288,28 @@ def render_strategy(folder, filename, is_advanced, target):
     # ---------------- 进阶版：用于全策略汇总的开关 ----------------
     if is_advanced:
         data = load_groups(folder, target)
-        using = bool(data.get("用进阶汇总", False))
-        st.markdown("**🔖 用于全策略汇总**（开启后汇总页该策略改用本进阶版参数；否则用原版组1）")
+        cur = data.get("汇总用变体")
+        st.markdown("**🔖 用于全策略汇总**（开启后汇总页该策略改用本变体参数；否则用原版组1）")
         tc = st.columns([2, 2, 3])
         if tc[0].button("📌 用这套参数做汇总", key=f"useadv_{kpre}", use_container_width=True,
                         type="primary"):
             g = dict(params)
             g["confirm_weeks"] = int(confirm)
             d = load_groups(folder, target)
-            d["进阶组1"] = g
-            d["用进阶汇总"] = True
+            d[f"{gpre}组1"] = g
+            d["汇总用变体"] = name
+            d.pop("用进阶汇总", None)
             write_groups(folder, d, target)
-            st.success("已设为汇总用：进阶版（存入进阶组1）")
+            st.success(f"已设为汇总用：{name}（存入{gpre}组1）")
             st.rerun()
         if tc[1].button("↩️ 汇总改回原版组1", key=f"useorig_{kpre}", use_container_width=True):
             d = load_groups(folder, target)
-            d["用进阶汇总"] = False
+            d["汇总用变体"] = None
+            d.pop("用进阶汇总", None)
             write_groups(folder, d, target)
             st.info("汇总已改回原版组1")
             st.rerun()
-        tc[2].caption(f"当前全策略汇总使用：{'✅ 进阶版（进阶组1）' if using else '原版组1'}")
+        tc[2].caption(f"当前全策略汇总使用：{('✅ ' + cur) if cur else '原版组1'}")
 
     # —— 指标实际分布统计 ——
     if hasattr(mod, "indicator"):
@@ -358,7 +372,7 @@ if VIEW[0] == "summary":
     rows = []
     for disp, folder in STRATS.items():
         data = load_groups(folder, target)
-        use_adv = ADVANCED.get(folder) and data.get("用进阶汇总")
+        use_adv = summary_variant(folder, data)
         m, *_, rkey = compute_group1(folder, target)
         rep = REPORT_PERF.get(rkey, {})
         rows.append({
@@ -391,14 +405,15 @@ if VIEW[0] == "summary":
 
 elif VIEW[0] == "advanced":
     folder, target = VIEW[2], VIEW[-1]
-    adv = ADVANCED[folder]
+    variants = ADVANCED[folder]
+    variant = next((v for v in variants if v["name"] == VIEW[1]), variants[0])
     top = st.columns([1, 4])
     if top[0].button("↩️ 返回原版", key=f"back_{target}_{folder}", use_container_width=True):
         _oname = next((s for subs in CATEGORIES.values() for s, f in subs if f == folder), folder)
         st.session_state.view = ("strategy", _oname, folder, target)
         st.rerun()
-    top[1].caption(f"你正在查看【进阶版】（标的：{target}）。原版保留不变；本页参数存档（进阶组1/2/3）与原版互不影响。")
-    render_strategy(folder, adv["file"], is_advanced=True, target=target)
+    top[1].caption(f"你正在查看【{variant['label']}】（标的：{target}）。原版及其它变体保留不变；本页参数存档独立。")
+    render_strategy(folder, target, variant)
 
 else:  # strategy（原版）
     folder, target = VIEW[2], VIEW[-1]
@@ -406,13 +421,14 @@ else:  # strategy（原版）
         st.warning("「大小单资金」子策略缺“超大单主动净流入”数据，暂未实现（占位）。")
         st.stop()
 
-    if folder in ADVANCED:
-        adv = ADVANCED[folder]
-        jc = st.columns([2, 3])
-        if jc[0].button(f"🚀 打开进阶版：{adv['name']}", key=f"toadv_{target}_{folder}",
-                        use_container_width=True, type="primary"):
-            st.session_state.view = ("advanced", adv["name"], folder, target)
-            st.rerun()
-        jc[1].caption("进阶版 = 另一套建仓/平仓逻辑（原版保留）。09=÷成交额重构，10=风险调整动量。")
+    variants = ADVANCED.get(folder, [])
+    if variants:
+        jc = st.columns(len(variants) + 1)
+        for i, v in enumerate(variants):
+            if jc[i].button(f"🚀 {v['label']}", key=f"toadv_{target}_{folder}_{v['name']}",
+                            use_container_width=True, type="primary"):
+                st.session_state.view = ("advanced", v["name"], folder, target)
+                st.rerun()
+        jc[-1].caption("进阶变体 = 另一套建仓/平仓逻辑（原版保留）。可各自独立存参数、选择是否用于汇总。")
 
-    render_strategy(folder, "策略.py", is_advanced=False, target=target)
+    render_strategy(folder, target, None)
