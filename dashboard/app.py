@@ -37,9 +37,10 @@ STRATS = {
     "01 宏观流动性": "01_宏观流动性", "02 信贷预期": "02_信贷预期",
     "03 中美汇率": "03_中美汇率", "04 中美利差": "04_中美利差",
     "05 期货基差": "05_期货基差", "06 期权PCR": "06_期权PCR",
-    "07 融资融券": "07_融资融券", "09 筹码结构": "09_筹码结构",
-    "10 长端动量": "10_长端动量",
+    "07 融资融券": "07_融资融券", "08 大小单资金": "08_大小单资金",
+    "09 筹码结构": "09_筹码结构", "10 长端动量": "10_长端动量",
 }
+NODATA_FOLDERS = {"08_大小单资金": "大小单资金"}   # 缺数据、汇总里只占位显示研报值
 METRIC_ORDER = ["年化收益率", "年化波动率", "年化IR", "最大回撤", "Calmar比率",
                 "周胜率", "周赔率", "信号次胜率", "信号次赔率", "次均天数", "信号次数"]
 PCT = {"年化收益率", "年化波动率", "最大回撤", "周胜率", "信号次胜率"}
@@ -109,20 +110,21 @@ def summary_variant(folder, data):
 
 
 def compute_group1(folder, target=BENCH):
-    """汇总用复现：若选了某进阶变体 -> 该变体「<gpre>组1」；否则原版组1（非基准标的回退复用中证800组1）。"""
-    data = load_groups(folder, target)
-    v = summary_variant(folder, data)
+    """汇总用复现。参数来源：中证800 用自己的；沪深300/中证1000 一律沿用中证800 的
+    组1 与进阶变体选择（信号在各自标的上重算）。选了进阶变体则用该变体「<gpre>组1」。"""
+    cfg = load_groups(folder, BENCH if target != BENCH else target)   # 参数来源(非基准→中证800)
+    v = summary_variant(folder, cfg)
     if v:
-        gpre = v["gpre"]
-        g = data.get(f"{gpre}组1") or seed_group(folder, target, f"{gpre}组1")
-        confirm = int(g.get("confirm_weeks", 1)) if g else 1
-        params = {k: val for k, val in g.items() if k != "confirm_weeks"} if g else {}
-        items = tuple(sorted(params.items())) if params else None
-        return compute(folder, items, confirm, filename=v["file"], target=target)
-    g = data.get("组1") or (seed_group(folder, target, "组1") if target != BENCH else None)
+        g = cfg.get(f"{v['gpre']}组1")
+        if g:
+            confirm = int(g.get("confirm_weeks", 1))
+            params = {k: val for k, val in g.items() if k != "confirm_weeks"}
+            items = tuple(sorted(params.items())) if params else None
+            return compute(folder, items, confirm, filename=v["file"], target=target)
+    g = cfg.get("组1")
     if g:
         confirm = int(g.get("confirm_weeks", 1))
-        params = {k: v for k, v in g.items() if k != "confirm_weeks"}
+        params = {k: val for k, val in g.items() if k != "confirm_weeks"}
         return compute(folder, tuple(sorted(params.items())), confirm, target=target)
     return compute(folder, None, target=target)
 
@@ -371,11 +373,22 @@ if VIEW[0] == "summary":
     st.subheader(title)
     if not is_bench:
         st.caption(f"⚠ 研报仅覆盖中证800。下表「研报」列为中证800 参考量级；技术类信号已按 {target} "
-                   f"自身 OHLC 重算，全市场信号为同信号换 {target} 持有。参数无本标的存档时默认复用你中证800 组1。")
+                   f"自身 OHLC 重算，全市场信号为同信号换 {target} 持有。{target} 一律沿用中证800 的组1/变体参数。")
     rows = []
     for disp, folder in STRATS.items():
-        data = load_groups(folder, target)
-        use_adv = summary_variant(folder, data)
+        data = load_groups(folder, target)                  # 本标的(仅取备注)
+        if folder in NODATA_FOLDERS:                         # 缺数据策略：只占位、不回测
+            rep = REPORT_PERF.get(NODATA_FOLDERS[folder], {})
+            rows.append({
+                "子策略": disp, "复现年化": "-", "研报年化": fmt("年化收益率", rep.get("年化收益率")),
+                "复现IR": "-", "研报IR": fmt("年化IR", rep.get("年化IR")),
+                "复现回撤": "-", "研报回撤": fmt("最大回撤", rep.get("最大回撤")),
+                "复现次数": "-", "研报次数": fmt("信号次数", rep.get("信号次数")),
+                "备注": data.get("备注") or "数据缺失（缺超大单主动净流入）",
+            })
+            continue
+        cfg = load_groups(folder, BENCH) if not is_bench else data   # 参数来源(非基准→中证800)
+        use_adv = summary_variant(folder, cfg)
         m, *_, rkey = compute_group1(folder, target)
         rep = REPORT_PERF.get(rkey, {})
         rows.append({
