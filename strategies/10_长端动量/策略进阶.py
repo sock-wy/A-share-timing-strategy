@@ -27,19 +27,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import numpy as np
 import pandas as pd
-from src.data_loader import load_index
+from src.data_loader import load_index_full
 from src.signal_utils import threshold_signal
 from src.config import PARAMS
 
 NAME = "长端动量进阶"
 REPORT_KEY = "长端动量"                       # 仍与研报“长端动量”绩效对照
 INDICATOR_NAME = "风险调整动量(t值)"          # 面板统计用；p 作用在它上（|RAM|>p 触发）
+INDEX_DEPENDENT = True   # 信号由标的自身 OHLC 计算，可跨标的复用（默认中证800）
 
 
-def indicator(params=None):
+def indicator(params=None, index_name="中证800"):
     """风险调整动量：高振幅交易日涨跌幅的 t 统计量（趋势强度/噪音）。"""
     p = params or PARAMS[NAME]
-    df = load_index("中证800")[["date", "pct_chg", "amplitude"]].set_index("date").dropna()
+    df = load_index_full(index_name)[["date", "pct_chg", "amplitude"]].set_index("date").dropna()
     amp = df["amplitude"].values
     ret = df["pct_chg"].values
     n, lb, q = len(df), int(p["lookback"]), float(p["amp_quantile"])
@@ -60,8 +61,8 @@ def indicator(params=None):
     return pd.Series(ram, index=df.index)
 
 
-def build_signal(params=None):
+def build_signal(params=None, index_name="中证800"):
     p = params or PARAMS[NAME]
-    signal = threshold_signal(indicator(params), p["p"])   # RAM>p做多 / <-p空仓 / 中间延续
+    signal = threshold_signal(indicator(params, index_name), p["p"])   # RAM>p做多 / <-p空仓 / 中间延续
     signal.name = "signal"
     return signal

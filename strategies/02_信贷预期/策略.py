@@ -18,9 +18,12 @@ LONG_BELOW = False   # 做多条件：均线差 > 阈值（信用扩张方向为
 
 
 def indicator(params=None):
-    """原始择时指标：信用扩张方向 = 中长期贷款同比 的长短均线差（短 - 长）。"""
+    """原始择时指标：信用扩张方向 = 中长期贷款同比 的长短均线差（短 - 长）。
+
+    data_mode='插值'（默认原始，Wind 日度插值）/ '月度'（时点 PIT 阶梯，不插值、无未来函数）。
+    """
     p = params or PARAMS[NAME]
-    balance = load_long_term_loan().set_index("date")["value"]
+    balance = load_long_term_loan(mode=p.get("data_mode", "插值")).set_index("date")["value"]
     yoy = balance / balance.shift(p["yoy_window"]) - 1          # 同比（剔除季节效应）
     return ma_diff(yoy, p["short_ma"], p["long_ma"], kind=p.get("ma_kind", "SMA"))
 

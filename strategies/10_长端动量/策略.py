@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import numpy as np
 import pandas as pd
-from src.data_loader import load_index
+from src.data_loader import load_index_full
 from src.signal_utils import sign_signal
 from src.config import PARAMS
 
@@ -19,12 +19,13 @@ NAME = "长端动量"
 REPORT_KEY = "长端动量"
 INDICATOR_NAME = "长端动量(累计涨跌幅%)"   # 面板统计用
 LONG_BELOW = False   # 做多条件：动量 > 0（阈值默认0）
+INDEX_DEPENDENT = True   # 信号由标的自身 OHLC 计算，可跨标的复用（默认中证800）
 
 
-def indicator(params=None):
+def indicator(params=None, index_name="中证800"):
     """原始择时指标：剔除低振幅交易日后的累计涨跌幅（长端动量）。"""
     p = params or PARAMS[NAME]
-    df = load_index("中证800")[["date", "pct_chg", "amplitude"]].set_index("date").dropna()
+    df = load_index_full(index_name)[["date", "pct_chg", "amplitude"]].set_index("date").dropna()
     amp = df["amplitude"].values
     ret = df["pct_chg"].values
     n, lb, q = len(df), p["lookback"], p["amp_quantile"]
@@ -38,7 +39,7 @@ def indicator(params=None):
     return pd.Series(momentum, index=df.index)
 
 
-def build_signal(params=None):
-    signal = sign_signal(indicator(params), positive_is_long=True)
+def build_signal(params=None, index_name="中证800"):
+    signal = sign_signal(indicator(params, index_name), positive_is_long=True)
     signal.name = "signal"
     return signal

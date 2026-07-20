@@ -16,18 +16,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import numpy as np
 import pandas as pd
-from src.data_loader import load_index, load_turnover
+from src.data_loader import load_index_full, load_turnover
 from src.signal_utils import rolling_zscore
 from src.config import PARAMS
 
 NAME = "筹码结构"
 REPORT_KEY = "筹码结构"
 INDICATOR_NAME = "赚钱效应(现价/均成本−1)"   # 面板统计用：>0 市场盈利、<0 亏损
+INDEX_DEPENDENT = True   # 信号由标的自身 OHLC+换手率计算，可跨标的复用（默认中证800）
 
 
-def _load_chip():
-    px = load_index("中证800")[["date", "high", "low", "close"]].set_index("date")
-    tn = load_turnover("中证800").set_index("date")["turnover"]
+def _load_chip(index_name="中证800"):
+    px = load_index_full(index_name)[["date", "high", "low", "close"]].set_index("date")
+    tn = load_turnover(index_name).set_index("date")["turnover"]
     df = px.join(tn, how="inner").dropna()
     res, sup, prof = _chip_distribution(
         df["high"].values, df["low"].values, df["close"].values,
@@ -35,9 +36,9 @@ def _load_chip():
     return df, res, sup, prof
 
 
-def indicator(params=None):
+def indicator(params=None, index_name="中证800"):
     """原始择时指标之一：赚钱效应（现价相对平均持仓成本的收益率）。"""
-    df, res, sup, prof = _load_chip()
+    df, res, sup, prof = _load_chip(index_name)
     return pd.Series(prof, index=df.index)
 
 
@@ -69,9 +70,9 @@ def _chip_distribution(high, low, close, turn):
     return resistance, support, profit
 
 
-def build_signal(params=None):
+def build_signal(params=None, index_name="中证800"):
     p = params or PARAMS[NAME]
-    df, res, sup, prof = _load_chip()
+    df, res, sup, prof = _load_chip(index_name)
 
     res_z = rolling_zscore(pd.Series(res, index=df.index), p["zscore_window"])
     sup_z = rolling_zscore(pd.Series(sup, index=df.index), p["zscore_window"])

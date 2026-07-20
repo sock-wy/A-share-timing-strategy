@@ -26,6 +26,14 @@ def load_strategy(folder, filename="策略.py"):
     return mod
 
 
+def build_signal_for(mod, params=None, index_name="中证800"):
+    """按标的生成信号：INDEX_DEPENDENT 策略（筹码结构/长端动量）用标的自身 OHLC 计算，
+    其余（宏观/跨境/衍生品/资金流）为全市场信号，与标的无关（只是换个标的回测持有）。"""
+    if getattr(mod, "INDEX_DEPENDENT", False):
+        return mod.build_signal(params, index_name=index_name)
+    return mod.build_signal(params)
+
+
 def run_strategy(mod, benchmark=None):
     """运行一个子策略模块（需含 build_signal / NAME / REPORT_KEY）。"""
     benchmark = benchmark or BACKTEST["benchmark"]

@@ -43,6 +43,22 @@ def load_index(name="中证800"):
     return df
 
 
+@lru_cache(maxsize=None)
+def load_index_full(name="中证800"):
+    """指数日线，并补齐 pct_chg / amplitude。频率：日度。
+
+    部分宽基原表只有 OHLC+amount（无 pct_chg/amplitude 列，如沪深300/中证1000），
+    这里按与中证800 同一口径由收盘价/最高最低价推导，供技术类子策略（筹码结构/长端动量）
+    跨标的复用。已有原生列则原样保留。
+    """
+    df = load_index(name).copy()
+    if "pct_chg" not in df.columns or df["pct_chg"].isna().all():
+        df["pct_chg"] = df["close"].pct_change() * 100                 # 日涨跌幅(%)
+    if "amplitude" not in df.columns or df["amplitude"].isna().all():
+        df["amplitude"] = (df["high"] - df["low"]) / df["close"].shift(1) * 100   # 振幅(%)
+    return df
+
+
 # ============================================================ 1 宏观流动性（月度）
 @lru_cache(maxsize=None)
 def load_macro_liquidity():
@@ -63,16 +79,29 @@ def load_macro_liquidity():
 
 # ============================================================ 2 信贷预期（日度，源为月度插值）
 @lru_cache(maxsize=None)
-def load_long_term_loan():
-    """金融机构中长期贷款余额。频率：日度（Wind 已将月度余额插值为日度）。
+def load_long_term_loan(mode="插值"):
+    """金融机构中长期贷款余额。频率：日度。原表前两行标题，数据从第 3 行：date, value(亿元)。
 
-    原表前两行是标题说明，真实数据从第 3 行起：date, value(亿元)。
+    mode='插值'（默认，原始）：Wind 已将月度余额线性插值为日度——注意这会引入未来函数
+        （某月中间某天的值用到了下月末才公布的数），研报大概率也是这么用的。
+    mode='月度'（时点 PIT，无未来函数）：从插值日度还原月末真实观测，前移一个月模拟公布滞后，
+        再按“阶梯前填”铺回日度（当月只用得到上月及以前已公布的余额）。用于对照真实可交易情形。
     """
     df = pd.read_excel(DATA_FILE, sheet_name="中长期贷款", header=None, skiprows=2,
                        names=["date", "value"])
     df = _to_dt(df)
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
-    return df.dropna()
+    df = df.dropna().reset_index(drop=True)
+    if mode != "月度":
+        return df
+    s = df.set_index("date")["value"]
+    monthly = s.resample("ME").last().dropna()                 # 月末真实观测（插值节点=月末）
+    monthly = monthly.shift(1)                                 # t 月余额到 t+1 月才公布可用
+    daily_index = pd.date_range(s.index.min(), s.index.max(), freq="D")
+    step = monthly.reindex(daily_index, method="ffill")        # 阶梯前填（不插值）
+    out = step.reset_index()
+    out.columns = ["date", "value"]
+    return out.dropna().reset_index(drop=True)
 
 
 # ============================================================ 3.1 中美汇率（日度）
