@@ -13,6 +13,7 @@ A股权益择时 · 多策略回测面板（全中文）
 · 09/10 另有【进阶版】：一键跳转，独立参数存档，可「用这套参数做汇总」
 """
 import sys
+import re
 import json
 import datetime
 from pathlib import Path
@@ -57,6 +58,13 @@ def fmt(k, v):
     if k in {"次均天数", "信号次数"}:
         return f"{v:.0f}"
     return f"{v:.2f}"
+
+
+def logic_html(txt):
+    """把简洁交易逻辑(轻markdown)转成精致小字卡片的 HTML。"""
+    txt = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", txt)
+    txt = txt.replace("\n\n", "<br>").replace("\n", "<br>")
+    return f'<div class="trade-logic">{txt}</div>'
 
 
 # ---------------- 参数组存档：strategies/<folder>/我的参数组[_标的].json ----------------
@@ -131,15 +139,16 @@ def compute_group1(folder, target=BENCH):
     return compute(folder, None, target=target)
 
 
-@st.cache_data(show_spinner="组合回测中（含动态赋权滚动优化）……")
-def cached_composites():
-    return run_composites()
+@st.cache_data(show_spinner="计算组合信号（含动态赋权滚动优化）……")
+def cached_composite_signals():
+    from src.composite import composite_signals
+    return composite_signals()                      # ({标签:综合信号}, 成员信号, 动态权重)
 
 
-@st.cache_data(show_spinner="计算子策略信号相关性……")
-def cached_member_corr():
+@st.cache_data(show_spinner="计算子策略信号……")
+def cached_member_signals():
     from src.composite import member_signals
-    return member_signals().corr()
+    return member_signals()
 
 
 def corr_heatmap(corr):
@@ -190,6 +199,9 @@ st.markdown("""
   [data-testid="stCaptionContainer"] { color:#7a766c; }
   hr { border-color:#e7e3d9; }
   a { color:#0e6e62; }
+  .trade-logic { font-size:.82rem; line-height:1.7; color:#41464c; background:#f6f5f0;
+    border-left:3px solid #0e6e62; border-radius:8px; padding:11px 15px; margin:.1rem 0 .9rem; }
+  .trade-logic b { color:#141a1f; font-weight:600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -263,15 +275,18 @@ def render_strategy(folder, target, variant=None):
     tag = ("　🚀进阶版" if is_advanced else "")
     tgt_tag = "" if is_bench else f"　【{target} 复刻】"
     st.subheader(name + tag + tgt_tag)
-    if is_chip:                                          # 筹码保持原样：研报原文
+    if is_chip:                                          # 筹码保持原样：研报原文 + 数学解释
         st.markdown("**📄 " + ("本进阶版·建仓/平仓逻辑" if is_advanced else "研报原文·策略定义与建仓/平仓逻辑") + "**")
         st.info(REPORT_METHOD_TEXT.get(name, "（研报未单列该子策略方法）"))
-    else:                                                # 其余：顶部简洁的“计算过程+建仓/平仓”
-        st.markdown("**🧭 计算过程与建仓/平仓逻辑**")
-        st.info(STRAT_LOGIC.get(name, MATH_EXPLAIN.get(name, "（略）")))
-    if name in MATH_EXPLAIN:
-        with st.expander("📐 数学逻辑解释（点开）"):
-            st.markdown(MATH_EXPLAIN[name])
+        if name in MATH_EXPLAIN:
+            with st.expander("📐 数学逻辑解释（点开）"):
+                st.markdown(MATH_EXPLAIN[name])
+    else:                                                # 其余：合并为一块「交易逻辑」（精致小字）
+        st.markdown("**🧭 交易逻辑**")
+        st.markdown(logic_html(STRAT_LOGIC.get(name, "")), unsafe_allow_html=True)
+        if name in MATH_EXPLAIN:
+            with st.expander("公式细节"):
+                st.markdown(MATH_EXPLAIN[name])
     if not is_bench:
         idx_dep = getattr(mod, "INDEX_DEPENDENT", False)
         st.caption(f"🔁 {target} 复刻：" + ("本策略为技术信号，信号由 " + target + " 自身 OHLC 重算。"
@@ -509,15 +524,22 @@ elif VIEW[0] == "correlation":
             f"**范围**：当前仅这 {len(COMPOSITE_MEMBERS)} 个组合成员：{_mem}。"
             f"　预留接口（后续可加入）：{_rsv}（08 缺数据）——接入组合后此表自动纳入。")
 
-    corr = cached_member_corr()
-    st.plotly_chart(corr_heatmap(corr), use_container_width=True)
-
     import numpy as np
+    member_sigs = cached_member_signals()
+    years = ["全区间"] + [str(y) for y in range(2015, 2026)]
+    ycol, _sp = st.columns([1, 3])
+    year = ycol.selectbox("🕒 时间线（选年份看当年相关性）", years, index=0, key="corr_year")
+    sl = member_sigs if year == "全区间" else member_sigs.loc[year]
+    corr = sl.corr().fillna(0.0)                       # 某年信号恒定→无相关，置0
+    for _i in range(len(corr)):
+        corr.iat[_i, _i] = 1.0
+
+    st.plotly_chart(corr_heatmap(corr), use_container_width=True)
     off = corr.values[np.triu_indices(len(corr), 1)]
-    hi = np.abs(off).max()
-    st.caption(f"非对角相关性：均值 {off.mean()*100:.0f}%，绝对值最大 {hi*100:.0f}%，"
-               f"|相关|>30% 的组合 {(np.abs(off)>0.3).sum()}/{len(off)} 对。"
-               "整体偏低，说明这些子策略驱动逻辑相对独立，适合合成（与研报结论一致）。")
+    hi = np.abs(off).max() if len(off) else 0.0
+    st.caption(f"【{year}】非对角相关性：均值 {off.mean()*100:.0f}%，绝对值最大 {hi*100:.0f}%，"
+               f"|相关|>30% 的组合 {int((np.abs(off)>0.3).sum())}/{len(off)} 对。"
+               "相关性越低，组合分散化收益越好（与研报结论一致）。切换年份可看相关性随市况的变化。")
     with st.expander("📋 相关性矩阵（数值表）"):
         st.dataframe((corr * 100).round(0).astype(int), use_container_width=True)
 
@@ -532,9 +554,14 @@ elif VIEW[0] == "composite":
             "**动态赋权**：滚动 120 日约束优化 —— 最小化 ‖|R_t| − Σ wᵢ·Sⁱ·R_t‖²，"
             "约束 0.5/N ≤ wᵢ ≤ 1.5/N、Σwᵢ=1（研报 N=10 用 5%~15%）。")
 
-    results, sigs, W = cached_composites()
+    comp_sigs, member_sigs, W = cached_composite_signals()
+    dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
+    dr = st.slider("🕒 时间轴（拖动选回测区间 / 样本内外）", min_value=dmin, max_value=dmax,
+                   value=(dmin, dmax), format="YYYY-MM-DD", key="comp_date")
+    cstart, cend = str(dr[0]), str(dr[1])
+    bench_df = load_index(BENCH)
     for tag in ["等权合成", "动态赋权"]:
-        r = results[tag]
+        r = run_backtest(bench_df, comp_sigs[tag], name=tag, start=cstart, end=cend)
         m = r["metrics"]
         rep = REPORT_PERF.get(tag, {})
         st.markdown(f"### {tag}")
@@ -549,8 +576,9 @@ elif VIEW[0] == "composite":
         if tag == "动态赋权":
             wlast = W.iloc[-1].sort_values(ascending=False)
             st.caption("最新一期动态权重：" + "　".join(f"{k} {v*100:.1f}%" for k, v in wlast.items()))
-    st.caption("⚠ 研报组合用全部 10 个子策略且子策略更强，故复现量级低于研报(16.79%/22.15%)；"
-               "本组合排除 01/08/09（接口已留）。把预留成员的 folder 移入 config.COMPOSITE_MEMBERS 即可接入。")
+    st.caption("研报列为全区间数值；拖动上方时间轴只改变「复现」列（可做样本内/外）。"
+               "⚠ 研报组合用全部 10 个子策略且子策略更强，故复现量级低于研报(16.79%/22.15%)；"
+               "本组合排除 01/08/09（接口已留），把预留成员 folder 移入 config.COMPOSITE_MEMBERS 即可接入。")
 
 elif VIEW[0] == "advanced":
     folder, target = VIEW[2], VIEW[-1]

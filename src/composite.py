@@ -79,18 +79,25 @@ def dynamic_weights(sigs, bench_ret, window=120, reest_every=5, lo=None, hi=None
     return comp, pd.DataFrame(W, index=dates, columns=names)
 
 
-def run_composites(members=None, target=BACKTEST["benchmark"], window=120):
-    """跑等权 + 动态赋权两个组合，返回 (结果dict, 成员信号, 动态权重)。"""
+def composite_signals(members=None, target=BACKTEST["benchmark"], window=120):
+    """只算两个组合的日频综合信号（不回测），返回 ({标签:信号}, 成员信号, 动态权重)。
+    供面板配合时间轴滑块按区间重算（信号计算较重、缓存一次即可）。"""
     sigs = member_signals(members, target)
     bench = load_index(target)
     ret = bench.set_index("date")["close"].pct_change().reindex(sigs.index).fillna(0)
-
     eq = equal_signal(sigs).rename("signal")
     dyn, W = dynamic_weights(sigs, ret, window=window)
+    return {"等权合成": eq, "动态赋权": dyn}, sigs, W
 
+
+def run_composites(members=None, target=BACKTEST["benchmark"], window=120,
+                   start=None, end=None):
+    """跑等权 + 动态赋权两个组合，返回 (结果dict, 成员信号, 动态权重)。"""
+    comp, sigs, W = composite_signals(members, target, window)
+    bench = load_index(target)
     results = {}
-    for tag, sig in [("等权合成", eq), ("动态赋权", dyn)]:
-        results[tag] = run_backtest(bench, sig, name=tag)
+    for tag, sig in comp.items():
+        results[tag] = run_backtest(bench, sig, name=tag, start=start, end=end)
     return results, sigs, W
 
 
