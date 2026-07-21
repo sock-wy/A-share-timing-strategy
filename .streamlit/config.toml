@@ -1,0 +1,11 @@
+# A股择时多策略面板 · 高档主题（编辑风、克制配色）
+[theme]
+base = "light"
+primaryColor = "#0e6e62"                 # 深petrol/墨绿 主色
+backgroundColor = "#faf9f6"              # 暖白底
+secondaryBackgroundColor = "#f1efe9"     # 侧栏/卡片 暖浅
+textColor = "#1c2126"                    # 墨黑正文
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"

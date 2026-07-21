@@ -136,8 +136,65 @@ def cached_composites():
     return run_composites()
 
 
+@st.cache_data(show_spinner="计算子策略信号相关性……")
+def cached_member_corr():
+    from src.composite import member_signals
+    return member_signals().corr()
+
+
+def corr_heatmap(corr):
+    """相关性热力图（高档配色：petrol↔cream↔terracotta 发散）。"""
+    import plotly.graph_objects as go
+    z = corr.values
+    scale = [[0.0, "#2a6f7f"], [0.5, "#f4f1ea"], [1.0, "#b06a3b"]]   # 负→0→正
+    fig = go.Figure(go.Heatmap(
+        z=z, x=list(corr.columns), y=list(corr.index), zmid=0, zmin=-1, zmax=1,
+        colorscale=scale, xgap=3, ygap=3,
+        text=[[f"{v*100:.0f}" for v in row] for row in z], texttemplate="%{text}",
+        textfont=dict(size=13), hovertemplate="%{y} × %{x}: %{z:.2f}<extra></extra>",
+        colorbar=dict(title="相关性", tickformat=".0%", outlinewidth=0)))
+    fig.update_layout(
+        height=520, margin=dict(l=10, r=10, t=10, b=10),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="PingFang SC, Microsoft YaHei, sans-serif", color="#1c2126"),
+        yaxis=dict(autorange="reversed"))
+    return fig
+
+
 st.set_page_config(page_title="A股择时多策略面板", layout="wide")
+
+# ---------------- 高档主题：字体 + 配色 + 组件细节 ----------------
+st.markdown("""
+<style>
+  html, body, [class*="css"], .stMarkdown, p, span, div, label, input, button, table, td, th {
+    font-family: "Inter","PingFang SC","Microsoft YaHei","Hiragino Sans GB",
+                 -apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  h1, h2, h3, h4 {
+    font-family: "Songti SC","STSong","Noto Serif CJK SC","Source Han Serif SC",
+                 Georgia,"Times New Roman",serif !important;
+    letter-spacing:.012em; color:#141a1f; font-weight:700;
+  }
+  h1 { font-size:2rem !important; padding-bottom:.35rem;
+       border-bottom:2px solid #0e6e62; display:inline-block; margin-bottom:.4rem; }
+  h3 { font-size:1.28rem !important; }
+  .block-container { padding-top:2.4rem; max-width:1400px; }
+  .stButton > button { border-radius:9px; transition:all .15s ease; font-weight:500; }
+  .stButton > button:hover { box-shadow:0 2px 9px rgba(14,110,98,.13); transform:translateY(-1px); }
+  [data-testid="stSidebar"] { border-right:1px solid #e7e3d9; }
+  [data-testid="stSidebar"] .stButton > button { text-align:left; }
+  [data-testid="stDataFrame"], [data-testid="stTable"] { border-radius:10px; overflow:hidden;
+       border:1px solid #e7e3d9; }
+  [data-testid="stAlert"] { border-radius:11px; }
+  [data-testid="stMetricValue"] { font-family:"Georgia",serif; }
+  [data-testid="stCaptionContainer"] { color:#7a766c; }
+  hr { border-color:#e7e3d9; }
+  a { color:#0e6e62; }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("A股权益择时 · 多策略回测面板")
+st.caption("开源证券《权益择时的多策略框架：从宏观驱动到微观验证》复现 · 6维度10子策略 + 组合合成")
 
 # ---------------- 侧边栏导航：标的目录 + 六大维度手风琴 ----------------
 if "view" not in st.session_state:
@@ -162,6 +219,10 @@ if st.sidebar.button(f"📊 {tgt} 全策略汇总", use_container_width=True,
 if st.sidebar.button("🧩 组合策略（中证800）", use_container_width=True,
                      type="primary" if VIEW[0] == "composite" else "secondary"):
     st.session_state.view = ("composite",)
+    st.rerun()
+if st.sidebar.button("🔗 子策略相关性", use_container_width=True,
+                     type="primary" if VIEW[0] == "correlation" else "secondary"):
+    st.session_state.view = ("correlation",)
     st.rerun()
 
 st.sidebar.caption("研报六大维度（点开选子策略）")
@@ -435,6 +496,30 @@ if VIEW[0] == "summary":
             write_groups(folder, data, target)
     st.caption("复现列使用各子策略「组1」参数（未保存则用默认/复用中证800组1）；"
                "09/10 若开启「用进阶汇总」则用其进阶版「进阶组1」（带🚀进阶标记）。备注可直接编辑，自动保存。")
+
+elif VIEW[0] == "correlation":
+    st.subheader("子策略相关性 · 中证800")
+    _mem = "、".join(n for n, _ in COMPOSITE_MEMBERS)
+    _rsv = "、".join(n for n, _ in COMPOSITE_RESERVED)
+    st.markdown("**🧭 基础信息**")
+    st.info("**看什么**：各子策略【择时信号】两两之间的皮尔逊相关性——衡量它们是否“同涨同跌”，"
+            "相关性越低，组合分散化收益越好（研报表12 同口径）。\n\n"
+            "**怎么算**：每个子策略用其「组1」参数在中证800 上生成日频信号（多/空/延续），"
+            "对齐到交易日后计算两两相关系数，区间 2015-01 ~ 2025-11。\n\n"
+            f"**范围**：当前仅这 {len(COMPOSITE_MEMBERS)} 个组合成员：{_mem}。"
+            f"　预留接口（后续可加入）：{_rsv}（08 缺数据）——接入组合后此表自动纳入。")
+
+    corr = cached_member_corr()
+    st.plotly_chart(corr_heatmap(corr), use_container_width=True)
+
+    import numpy as np
+    off = corr.values[np.triu_indices(len(corr), 1)]
+    hi = np.abs(off).max()
+    st.caption(f"非对角相关性：均值 {off.mean()*100:.0f}%，绝对值最大 {hi*100:.0f}%，"
+               f"|相关|>30% 的组合 {(np.abs(off)>0.3).sum()}/{len(off)} 对。"
+               "整体偏低，说明这些子策略驱动逻辑相对独立，适合合成（与研报结论一致）。")
+    with st.expander("📋 相关性矩阵（数值表）"):
+        st.dataframe((corr * 100).round(0).astype(int), use_container_width=True)
 
 elif VIEW[0] == "composite":
     st.subheader("组合策略（合成模型） · 中证800")
