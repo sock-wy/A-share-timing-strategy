@@ -1,9 +1,0 @@
-{
-  "组1": {
-    "short_ma": 10,
-    "long_ma": 38,
-    "ma_kind": "SMA",
-    "threshold": -0.025,
-    "confirm_weeks": 1
-  }
-}
