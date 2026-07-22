@@ -223,20 +223,11 @@ if tgt != cur_target:                                    # 切标的 -> 跳该�
     st.session_state.view = ("summary", tgt)
     st.rerun()
 
-st.sidebar.markdown(f"**② {tgt} · 菜单**")
+st.sidebar.markdown(f"**② 子策略 · {tgt}**")
 if st.sidebar.button(f"📊 {tgt} 全策略汇总", use_container_width=True,
                      type="primary" if VIEW[0] == "summary" else "secondary"):
     st.session_state.view = ("summary", tgt)
     st.rerun()
-if st.sidebar.button("🧩 组合策略（中证800）", use_container_width=True,
-                     type="primary" if VIEW[0] == "composite" else "secondary"):
-    st.session_state.view = ("composite",)
-    st.rerun()
-if st.sidebar.button("🔗 子策略相关性", use_container_width=True,
-                     type="primary" if VIEW[0] == "correlation" else "secondary"):
-    st.session_state.view = ("correlation",)
-    st.rerun()
-
 st.sidebar.caption("研报六大维度（点开选子策略）")
 _cur = VIEW[2] if VIEW[0] in ("strategy", "advanced") else None
 for _cat, _subs in CATEGORIES.items():
@@ -251,6 +242,19 @@ for _cat, _subs in CATEGORIES.items():
                              use_container_width=True):
                     st.session_state.view = ("advanced", _v["name"], _folder, tgt)
                     st.rerun()
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("**③ 组合策略**")
+if st.sidebar.button("🧩 组合策略（中证800）", use_container_width=True,
+                     type="primary" if VIEW[0] == "composite" else "secondary"):
+    st.session_state.view = ("composite",)
+    st.rerun()
+
+st.sidebar.markdown("**④ 子策略相关性**")
+if st.sidebar.button("🔗 子策略相关性（中证800）", use_container_width=True,
+                     type="primary" if VIEW[0] == "correlation" else "secondary"):
+    st.session_state.view = ("correlation",)
+    st.rerun()
 
 
 # ============================================================ 单策略渲染（原版/进阶版/多标的共用）
