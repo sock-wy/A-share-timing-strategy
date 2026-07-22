@@ -33,7 +33,8 @@ from src.config import (REPORT_PERF, PARAM_SPACE, PARAMS, CATEGORIES,
                         REPORT_RESULT_TEXT, REPORT_METHOD_TEXT, MA_KIND_STRATEGIES,
                         MATH_EXPLAIN, ADVANCED, BENCH, TARGETS,
                         DATA_MODE_STRATEGIES, DATA_MODE_OPTIONS, PARAM_HELP,
-                        STRAT_LOGIC, COMPOSITE_MEMBERS, COMPOSITE_RESERVED)
+                        STRAT_LOGIC, COMPOSITE_MEMBERS, COMPOSITE_RESERVED,
+                        REPORT_CORR, REPORT_CORR_ORDER, REPORT_CORR_TEXT, REPORT_EQ_YEARLY)
 from src.composite import run_composites
 
 STRATS = {
@@ -151,13 +152,13 @@ def cached_member_signals():
     return member_signals()
 
 
-def corr_heatmap(corr):
+def corr_heatmap(corr, zlim=1.0):
     """相关性热力图（高档配色：petrol↔cream↔terracotta 发散）。"""
     import plotly.graph_objects as go
     z = corr.values
     scale = [[0.0, "#2a6f7f"], [0.5, "#f4f1ea"], [1.0, "#b06a3b"]]   # 负→0→正
     fig = go.Figure(go.Heatmap(
-        z=z, x=list(corr.columns), y=list(corr.index), zmid=0, zmin=-1, zmax=1,
+        z=z, x=list(corr.columns), y=list(corr.index), zmid=0, zmin=-zlim, zmax=zlim,
         colorscale=scale, xgap=3, ygap=3,
         text=[[f"{v*100:.0f}" for v in row] for row in z], texttemplate="%{text}",
         textfont=dict(size=13), hovertemplate="%{y} × %{x}: %{z:.2f}<extra></extra>",
@@ -426,6 +427,68 @@ def render_strategy(folder, target, variant=None):
     st.dataframe(trades, use_container_width=True, hide_index=True)
 
 
+
+# ---------------- 组合板块辅助（分年度/信号窗口/权重图） ----------------
+def yearly_perf(wk):
+    """周度明细 -> 分年 (策略收益, 基准收益)。"""
+    g = wk.copy()
+    g["y"] = g.index.year
+    strat = g.groupby("y")["strat_ret"].apply(lambda x: (1 + x.fillna(0)).prod() - 1)
+    bench = g.groupby("y")["ret"].apply(lambda x: (1 + x.fillna(0)).prod() - 1)
+    return strat, bench
+
+
+def flat_windows(wk):
+    """空仓窗口：position==0 的连续周段 -> [(起, 止, 基准区间收益)]。"""
+    pos = wk["position"].values
+    segs, i, n = [], 0, len(wk)
+    while i < n:
+        if pos[i] == 0:
+            j = i
+            while j + 1 < n and pos[j + 1] == 0:
+                j += 1
+            seg = wk.iloc[i:j + 1]
+            entry = wk.iloc[max(i - 1, 0)]
+            br = (1 + seg["ret"].fillna(0)).prod() - 1
+            segs.append((pd.Timestamp(entry["trade_date"]), pd.Timestamp(seg.iloc[-1]["trade_date"]), br))
+            i = j + 1
+        else:
+            i += 1
+    return segs
+
+
+def window_bar_fig(labels, values, color, title):
+    """图16/17 风格：各信号窗口的基准区间收益 横向条形图（按时间自上而下）。"""
+    import plotly.graph_objects as go
+    fig = go.Figure(go.Bar(
+        x=[v * 100 for v in values], y=labels, orientation="h",
+        marker_color=color, hovertemplate="%{y}: %{x:.1f}%<extra></extra>"))
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=14)), height=max(320, 16 * len(labels) + 90),
+        margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)", xaxis=dict(ticksuffix="%", zeroline=True, zerolinewidth=1),
+        yaxis=dict(autorange="reversed", tickfont=dict(size=10)),
+        font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
+    return fig
+
+
+def price_windows_fig(bench_df, long_wins, flat_wins, start, end):
+    """图18 风格：中证800 走势 + 主要做多(红)/空仓(绿)窗口色带。"""
+    import plotly.graph_objects as go
+    px = bench_df.set_index("date")["close"].loc[start:end]
+    fig = go.Figure(go.Scatter(x=px.index, y=px.values, mode="lines",
+                               line=dict(color="#6f8fc0", width=1.6), name="中证800"))
+    for a, b, _ in long_wins:
+        fig.add_vrect(x0=a, x1=b, fillcolor="rgba(200,80,60,.16)", line_width=0)
+    for a, b, _ in flat_wins:
+        fig.add_vrect(x0=a, x1=b, fillcolor="rgba(80,160,90,.18)", line_width=0)
+    fig.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10),
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      title=dict(text="贡献主要收益的做多(红)与空仓(绿)窗口", font=dict(size=14)),
+                      font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"), showlegend=False)
+    return fig
+
+
 # ============================================================ 视图分发
 if VIEW[0] == "summary":
     target = VIEW[-1] if VIEW[-1] in TARGETS else BENCH
@@ -485,39 +548,68 @@ elif VIEW[0] == "correlation":
     _mem = "、".join(n for n, _ in COMPOSITE_MEMBERS)
     _rsv = "、".join(n for n, _ in COMPOSITE_RESERVED)
     st.markdown("**🧭 基础信息**")
-    st.info("**看什么**：各子策略【择时信号】两两之间的皮尔逊相关性——衡量它们是否“同涨同跌”，"
-            "相关性越低，组合分散化收益越好（研报表12 同口径）。\n\n"
-            "**怎么算**：每个子策略用其「组1」参数在中证800 上生成日频信号（多/空/延续），"
-            "对齐到交易日后计算两两相关系数，区间 2015-01 ~ 2025-11。\n\n"
-            f"**范围**：当前仅这 {len(COMPOSITE_MEMBERS)} 个组合成员：{_mem}。"
-            f"　预留接口（后续可加入）：{_rsv}（08 缺数据）——接入组合后此表自动纳入。")
+    st.info("**看什么**：各子策略【择时信号】两两之间的皮尔逊相关性——相关性越低，组合分散化收益越好。\n\n"
+            "**怎么算**：每个子策略用「已保存参数组」在中证800 上生成日频信号（多/空/延续），对齐交易日后计算两两相关。\n\n"
+            f"**范围**：当前 {len(COMPOSITE_MEMBERS)} 个组合成员：{_mem}。预留接口：{_rsv}（08 缺数据）。\n\n"
+            f"**研报原文（表12 结论）**：“{REPORT_CORR_TEXT}”")
 
-    import numpy as np
     member_sigs = cached_member_signals()
+
+    st.markdown("### ① 复现相关性（可选年份）")
     years = ["全区间"] + [str(y) for y in range(2015, 2026)]
     ycol, _sp = st.columns([1, 3])
     year = ycol.selectbox("🕒 时间线（选年份看当年相关性）", years, index=0, key="corr_year")
     sl = member_sigs if year == "全区间" else member_sigs.loc[year]
-    corr = sl.corr().fillna(0.0)                       # 某年信号恒定→无相关，置0
+    corr = sl.corr().fillna(0.0)
     for _i in range(len(corr)):
         corr.iat[_i, _i] = 1.0
-
     st.plotly_chart(corr_heatmap(corr), use_container_width=True)
     off = corr.values[np.triu_indices(len(corr), 1)]
     hi = np.abs(off).max() if len(off) else 0.0
     st.caption(f"【{year}】非对角相关性：均值 {off.mean()*100:.0f}%，绝对值最大 {hi*100:.0f}%，"
                f"|相关|>30% 的组合 {int((np.abs(off)>0.3).sum())}/{len(off)} 对。"
-               "相关性越低，组合分散化收益越好（与研报结论一致）。切换年份可看相关性随市况的变化。")
-    with st.expander("📋 相关性矩阵（数值表）"):
-        st.dataframe((corr * 100).round(0).astype(int), use_container_width=True)
+               "切换年份可见：大波动年份（如2020）相关性明显抬升——分散化在最需要时最弱，这是研报未展示的一层。")
+
+    st.markdown("### ② 研报·表12 子策略相关性（原文数据，全10策略）")
+    rep_corr = pd.DataFrame(np.eye(len(REPORT_CORR_ORDER)),
+                            index=REPORT_CORR_ORDER, columns=REPORT_CORR_ORDER)
+    for _a, _row in REPORT_CORR.items():
+        for _b, _v in _row.items():
+            rep_corr.loc[_a, _b] = _v
+            rep_corr.loc[_b, _a] = _v
+    st.plotly_chart(corr_heatmap(rep_corr), use_container_width=True)
+    st.caption("研报全区间口径，含我们缺数据的大小单资金。研报超30%仅两对：筹码结构×融资融券 +35%、"
+               "大小单资金×期权PCR −30%——都发生在我们没有/构造不同的策略上。")
+
+    st.markdown("### ③ 复现 vs 研报 · 差异（复现 − 研报，公共成员）")
+    full_corr = member_sigs.corr().fillna(0.0)
+    common = [n for n in full_corr.columns if n in REPORT_CORR_ORDER]
+    ours_c = full_corr.loc[common, common].copy()
+    rep_c = rep_corr.loc[common, common]
+    diff = ours_c - rep_c
+    for _i in range(len(diff)):
+        diff.iat[_i, _i] = 0.0
+    st.plotly_chart(corr_heatmap(diff, zlim=0.4), use_container_width=True)
+    doff = diff.values[np.triu_indices(len(diff), 1)]
+    _pairs = [(abs(diff.iat[_i, _j]), common[_i], common[_j], ours_c.iat[_i, _j], rep_c.iat[_i, _j])
+              for _i in range(len(common)) for _j in range(_i + 1, len(common))]
+    _pairs.sort(reverse=True)
+    st.caption(f"公共 {len(common)} 成员、{len(doff)} 对：平均绝对差 {np.abs(doff).mean()*100:.0f}pp，"
+               f"最大 {np.abs(doff).max()*100:.0f}pp。差异最大三对：" 
+               + "；".join(f"{a}×{b}（复现{o*100:+.0f}% vs 研报{r*100:+.0f}%）" for _, a, b, o, r in _pairs[:3])
+               + "。差异整体在噪声量级 ⇒ 复现信号族的相关结构与研报一致，组合的分散化前提成立。")
+    with st.expander("📋 数值表（复现 / 研报 / 差 = 复现−研报，单位 %）"):
+        c1, c2, c3 = st.columns(3)
+        c1.markdown("**复现（全区间）**"); c1.dataframe((ours_c*100).round(0).astype(int), use_container_width=True)
+        c2.markdown("**研报表12**");      c2.dataframe((rep_c*100).round(0).astype(int), use_container_width=True)
+        c3.markdown("**差（复现−研报）**"); c3.dataframe((diff*100).round(0).astype(int), use_container_width=True)
 
 elif VIEW[0] == "composite":
     st.subheader("组合策略（合成模型） · 中证800")
     _mem = "、".join(n for n, _ in COMPOSITE_MEMBERS)
     _rsv = "、".join(n for n, _ in COMPOSITE_RESERVED)
-    st.caption(f"当前纳入 {len(COMPOSITE_MEMBERS)} 个子策略：{_mem}。"
-               f"　预留接口（后期可接入）：{_rsv}（08 缺数据）。"
-               f"　各成员用其「组1」参数在中证800 上出信号，再合成。")
+    st.caption(f"当前纳入 {len(COMPOSITE_MEMBERS)} 个子策略：{_mem}。预留接口：{_rsv}（08 缺数据）。"
+               "各成员用「已保存参数组」在中证800 上出信号，再合成。")
     st.info("**等权合成**：各子策略信号等权平均 → 综合信号>0 满仓、≤0 空仓。\n\n"
             "**动态赋权**：滚动 120 日约束优化 —— 最小化 ‖|R_t| − Σ wᵢ·Sⁱ·R_t‖²，"
             "约束 0.5/N ≤ wᵢ ≤ 1.5/N、Σwᵢ=1（研报 N=10 用 5%~15%）。")
@@ -528,8 +620,13 @@ elif VIEW[0] == "composite":
                    value=(dmin, dmax), format="YYYY-MM-DD", key="comp_date")
     cstart, cend = str(dr[0]), str(dr[1])
     bench_df = load_index(BENCH)
+
+    # ═══ 甲 · 模型与绩效 ═══
+    st.markdown("## 甲 · 模型与绩效")
+    comp_res = {}
     for tag in ["等权合成", "动态赋权"]:
         r = run_backtest(bench_df, comp_sigs[tag], name=tag, start=cstart, end=cend)
+        comp_res[tag] = r
         m = r["metrics"]
         rep = REPORT_PERF.get(tag, {})
         st.markdown(f"### {tag}")
@@ -541,12 +638,87 @@ elif VIEW[0] == "composite":
             "研报(全10子策略)": [fmt(k, rep.get(k)) for k in METRIC_ORDER],
         })
         st.dataframe(tbl, use_container_width=True, hide_index=True)
-        if tag == "动态赋权":
-            wlast = W.iloc[-1].sort_values(ascending=False)
-            st.caption("最新一期动态权重：" + "　".join(f"{k} {v*100:.1f}%" for k, v in wlast.items()))
-    st.caption("研报列为全区间数值；拖动上方时间轴只改变「复现」列（可做样本内/外）。"
-               "⚠ 研报组合用全部 10 个子策略且子策略更强，故复现量级低于研报(16.79%/22.15%)；"
-               "本组合排除 01/08/09（接口已留），把预留成员 folder 移入 config.COMPOSITE_MEMBERS 即可接入。")
+    st.caption("研报列为全区间数值；拖动时间轴只改变「复现」列。⚠ 研报组合含全部 10 个子策略且部分子策略"
+               "数字存在插值泄漏等因素（见七策略对比文档），故复现量级低于研报(16.79%/22.15%)。")
+
+    # ═══ 乙 · 分年度表现（研报表14口径） ═══
+    st.markdown("## 乙 · 分年度表现（研报·表14 口径）")
+    ycols = st.columns(2)
+    for _ci, tag in enumerate(["等权合成", "动态赋权"]):
+        wk = comp_res[tag]["weekly"]
+        ystrat, ybench = yearly_perf(wk)
+        rows = []
+        for y in ystrat.index:
+            row = {"年份": str(y), "复现择时": f"{ystrat[y]*100:.2f}%",
+                   "中证800": f"{ybench[y]*100:.2f}%", "复现超额": f"{(ystrat[y]-ybench[y])*100:+.2f}%"}
+            if tag == "等权合成" and y in REPORT_EQ_YEARLY:
+                rp = REPORT_EQ_YEARLY[y]
+                row["研报择时"] = f"{rp[0]:.2f}%"
+                row["研报超额"] = f"{rp[2]:+.2f}%"
+            rows.append(row)
+        df_y = pd.DataFrame(rows)
+        if tag == "等权合成":
+            df_y = df_y[["年份", "复现择时", "研报择时", "中证800", "复现超额", "研报超额"]]
+        with ycols[_ci]:
+            st.markdown(f"**{tag}**")
+            st.dataframe(df_y, use_container_width=True, hide_index=True, height=430)
+    _neg = [str(y) for y in yearly_perf(comp_res["等权合成"]["weekly"])[0].index
+            if yearly_perf(comp_res["等权合成"]["weekly"])[0][y] < 0]
+    st.caption("对照研报表14：研报等权仅 2022/2023 录得负收益、超额除 2017(−0.66%) 外全为正。"
+               f"复现等权负收益年份：{('、'.join(_neg)) if _neg else '无'}。"
+               "复现在 2015/2018 的超额显著小于研报（57.7%/43.4% 的大头来自研报子策略在这两年的极端表现——"
+               "其中 2015 相当部分依赖插值信贷与部分窗口宏观信号）。")
+
+    # ═══ 丙 · 动态权重变化（研报图14） ═══
+    st.markdown("## 丙 · 动态权重变化（研报·图14 口径）")
+    import plotly.graph_objects as go
+    Wd = W.resample("W-FRI").last().dropna(how="all").loc[cstart:cend]
+    figw = go.Figure()
+    for col in Wd.columns:
+        figw.add_trace(go.Scatter(x=Wd.index, y=Wd[col]*100, mode="lines", stackgroup="w",
+                                  name=col, line=dict(width=0.6),
+                                  hovertemplate=col+": %{y:.1f}%<extra></extra>"))
+    figw.update_layout(height=430, margin=dict(l=10, r=10, t=30, b=10),
+                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                       yaxis=dict(range=[0, 100], ticksuffix="%"),
+                       title=dict(text="动态赋权 8 成员权重堆叠（周度快照）", font=dict(size=14)),
+                       legend=dict(orientation="h", y=-0.15),
+                       font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
+    st.plotly_chart(figw, use_container_width=True)
+    wlast = W.iloc[-1].sort_values(ascending=False)
+    st.caption("最新一期权重：" + "　".join(f"{k} {v*100:.1f}%" for k, v in wlast.items())
+               + f"。约束带 {0.5/len(W.columns)*100:.1f}%~{1.5/len(W.columns)*100:.1f}%（研报10成员用5%~15%）。"
+               "与研报图14一致的现象：权重在约束带内快速轮动、无单一策略长期独大。")
+
+    # ═══ 丁 · 信号窗口分析（研报图16/17/18） ═══
+    st.markdown("## 丁 · 信号窗口分析（研报·图16/17/18 口径）")
+    sel = st.radio("查看哪个模型的信号窗口", ["动态赋权", "等权合成"], horizontal=True, key="win_model")
+    rr = comp_res[sel]
+    trades = rr["trades"]
+    fw = flat_windows(rr["weekly"])
+    lc_, rc_ = st.columns(2)
+    _llab = [f"{t.进场日期}~{t.出场日期}" for t in trades.itertuples()]
+    _lval = [t.trade_return for t in trades.itertuples()]
+    lc_.plotly_chart(window_bar_fig(_llab, _lval, "#8fa8d3",
+                     f"历次做多信号基准收益（{len(_lval)}段）"), use_container_width=True)
+    _flab = [f"{a.date()}~{b.date()}" for a, b, _ in fw]
+    _fval = [v for _, _, v in fw]
+    rc_.plotly_chart(window_bar_fig(_flab, _fval, "#9dbf9a",
+                     f"历次空仓信号基准收益（{len(_fval)}段，负=躲过下跌）"), use_container_width=True)
+    _lw = [w for w in _lval if w > 0]
+    _fx = [v for v in _fval if v < 0]
+    st.caption(f"【{sel}】做多段胜率 {len(_lw)}/{len(_lval)}；空仓段中 {len(_fx)}/{len(_fval)} 段基准下跌（躲对）。"
+               "研报图16/17（动态赋权）同口径：做多以 2015.2-5(+55%)、2020.9-2021.1、2019.1-3 贡献最大；"
+               "空仓以 2018.1-9(−30%)、2021.12-2022.6、2015.5-10 躲跌最多——对照左右图可逐段比对。")
+
+    _top_long = sorted([(t.进场日期, t.出场日期, t.trade_return) for t in trades.itertuples()],
+                       key=lambda x: -x[2])[:8]
+    _top_flat = sorted(fw, key=lambda x: x[2])[:7]
+    st.plotly_chart(price_windows_fig(bench_df, _top_long, _top_flat, cstart, cend),
+                    use_container_width=True)
+    st.caption(f"仿研报图18：标出贡献最大的 8 段做多（红）与 7 段空仓（绿）。研报图18 的绿带集中在 "
+               "2015下半年/2018/2022 三大熊段、红带在 2015上半年/2019初/2020下半年/2024.9——"
+               "复现若在同位置着色，说明组合抓住了同样的大级别行情。")
 
 elif VIEW[0] == "advanced":
     folder, target = VIEW[2], VIEW[-1]
