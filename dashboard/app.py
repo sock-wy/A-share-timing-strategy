@@ -259,11 +259,14 @@ for _cat, _subs in CATEGORIES.items():
                     st.rerun()
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("**③ 组合策略**")
-if st.sidebar.button("🧩 组合策略（中证800）", use_container_width=True,
-                     type="primary" if VIEW[0] == "composite" else "secondary"):
-    st.session_state.view = ("composite",)
-    st.rerun()
+st.sidebar.markdown("**③ 组合策略（中证800）**")
+_cb = VIEW[1] if (VIEW[0] == "composite" and len(VIEW) > 1) else ("甲" if VIEW[0] == "composite" else None)
+for _bk, _blab in [("甲", "模型与绩效"), ("乙", "分年度表现"), ("丙", "动态权重变化"),
+                   ("丁", "信号窗口分析"), ("戊", "近8周赋权信号"), ("己", "各主流指数表现")]:
+    if st.sidebar.button(f"🧩 {_bk}·{_blab}", key=f"navcomp_{_bk}", use_container_width=True,
+                         type="primary" if _cb == _bk else "secondary"):
+        st.session_state.view = ("composite", _bk)
+        st.rerun()
 
 st.sidebar.markdown("**④ 子策略相关性**")
 if st.sidebar.button("🔗 子策略相关性（中证800）", use_container_width=True,
@@ -619,190 +622,191 @@ elif VIEW[0] == "correlation":
         c3.markdown("**差（复现−研报）**"); c3.dataframe((diff*100).round(0).astype(int), use_container_width=True)
 
 elif VIEW[0] == "composite":
-    st.subheader("组合策略（合成模型） · 中证800")
+    import plotly.graph_objects as go
+    block = VIEW[1] if len(VIEW) > 1 else "甲"
+    _blabs = {"甲": "模型与绩效", "乙": "分年度表现", "丙": "动态权重变化",
+              "丁": "信号窗口分析", "戊": "近8周赋权信号", "己": "各主流指数表现"}
+    st.subheader(f"组合策略 · {block}·{_blabs.get(block, '')}")
     _mem = "、".join(n for n, _ in COMPOSITE_MEMBERS)
     _rsv = "、".join(n for n, _ in COMPOSITE_RESERVED)
-    st.caption(f"当前纳入 {len(COMPOSITE_MEMBERS)} 个子策略：{_mem}。预留接口：{_rsv}（08 缺数据）。"
+    st.caption(f"动态赋权组合 = {len(COMPOSITE_MEMBERS)} 个成员：{_mem}。预留接口：{_rsv}（08 缺数据）。"
                "各成员用「已保存参数组」在中证800 上出信号，再合成。")
-    st.info("**等权合成**：各子策略信号等权平均 → 综合信号>0 满仓、≤0 空仓。\n\n"
-            "**动态赋权**：滚动 120 日约束优化 —— 最小化 ‖|R_t| − Σ wᵢ·Sⁱ·R_t‖²，"
-            "约束 0.5/N ≤ wᵢ ≤ 1.5/N、Σwᵢ=1（研报 N=10 用 5%~15%）。")
 
     comp_sigs, member_sigs, W = cached_composite_signals()
-    dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
-    dr = st.slider("🕒 时间轴（拖动选回测区间 / 样本内外）", min_value=dmin, max_value=dmax,
-                   value=(dmin, dmax), format="YYYY-MM-DD", key="comp_date")
-    cstart, cend = str(dr[0]), str(dr[1])
     bench_df = load_index(BENCH)
-
-    # ═══ 甲 · 模型与绩效 ═══
-    st.markdown("## 甲 · 模型与绩效")
+    if block != "己":
+        dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
+        dr = st.slider("🕒 时间轴（拖动选回测区间 / 样本内外）", min_value=dmin, max_value=dmax,
+                       value=(dmin, dmax), format="YYYY-MM-DD", key="comp_date")
+        cstart, cend = str(dr[0]), str(dr[1])
+    else:
+        cstart, cend = "2015-01-05", "2025-11-28"
     comp_res = {}
-    for tag in ["等权合成", "动态赋权"]:
-        r = run_backtest(bench_df, comp_sigs[tag], name=tag, start=cstart, end=cend)
-        comp_res[tag] = r
-        m = r["metrics"]
-        rep = REPORT_PERF.get(tag, {})
-        st.markdown(f"### {tag}")
-        st.plotly_chart(nav_figure({"weekly": r["weekly"], "name": f"{tag}（中证800）"}),
+    if block in ("甲", "乙", "丁"):
+        for tag in ["等权合成", "动态赋权"]:
+            comp_res[tag] = run_backtest(bench_df, comp_sigs[tag], name=tag, start=cstart, end=cend)
+
+    if block == "甲":
+        st.info("**等权合成**：各子策略信号等权平均 → 综合信号>0 满仓、≤0 空仓。\n\n"
+                "**动态赋权**：滚动 120 日约束优化 —— 最小化 ‖|R_t| − Σ wᵢ·Sⁱ·R_t‖²，"
+                "约束 0.5/N ≤ wᵢ ≤ 1.5/N、Σwᵢ=1（研报 N=10 用 5%~15%）。")
+        for tag in ["等权合成", "动态赋权"]:
+            r = comp_res[tag]
+            m = r["metrics"]
+            rep = REPORT_PERF.get(tag, {})
+            st.markdown(f"### {tag}")
+            st.plotly_chart(nav_figure({"weekly": r["weekly"], "name": f"{tag}（中证800）"}),
+                            use_container_width=True)
+            tbl = pd.DataFrame({
+                "指标": METRIC_ORDER,
+                "复现": [fmt(k, m.get(k)) for k in METRIC_ORDER],
+                "研报(全10子策略)": [fmt(k, rep.get(k)) for k in METRIC_ORDER],
+            })
+            st.dataframe(tbl, use_container_width=True, hide_index=True)
+        st.caption("研报列为全区间数值；拖动时间轴只改变「复现」列。⚠ 研报组合含全部 10 个子策略且部分子策略"
+                   "数字存在插值泄漏等因素（见七策略对比文档），故复现量级低于研报(16.79%/22.15%)。")
+
+    elif block == "乙":
+        ycols = st.columns(2)
+        for _ci, tag in enumerate(["等权合成", "动态赋权"]):
+            wk = comp_res[tag]["weekly"]
+            ystrat, ybench = yearly_perf(wk)
+            rows = []
+            for y in ystrat.index:
+                row = {"年份": str(y), "复现择时": f"{ystrat[y]*100:.2f}%",
+                       "中证800": f"{ybench[y]*100:.2f}%", "复现超额": f"{(ystrat[y]-ybench[y])*100:+.2f}%"}
+                if tag == "等权合成" and y in REPORT_EQ_YEARLY:
+                    rp = REPORT_EQ_YEARLY[y]
+                    row["研报择时"] = f"{rp[0]:.2f}%"
+                    row["研报超额"] = f"{rp[2]:+.2f}%"
+                rows.append(row)
+            df_y = pd.DataFrame(rows)
+            if tag == "等权合成":
+                df_y = df_y[["年份", "复现择时", "研报择时", "中证800", "复现超额", "研报超额"]]
+            with ycols[_ci]:
+                st.markdown(f"**{tag}**")
+                st.dataframe(df_y, use_container_width=True, hide_index=True, height=430)
+        _neg = [str(y) for y in yearly_perf(comp_res["等权合成"]["weekly"])[0].index
+                if yearly_perf(comp_res["等权合成"]["weekly"])[0][y] < 0]
+        st.caption("对照研报表14：研报等权仅 2022/2023 录得负收益、超额除 2017(−0.66%) 外全为正。"
+                   f"复现等权负收益年份：{('、'.join(_neg)) if _neg else '无'}。"
+                   "复现在 2015/2018 的超额显著小于研报（57.7%/43.4% 的大头来自研报子策略在这两年的极端表现——"
+                   "其中 2015 相当部分依赖插值信贷与部分窗口宏观信号）。")
+
+    elif block == "丙":
+        Wd = W.resample("W-FRI").last().dropna(how="all").loc[cstart:cend]
+        figw = go.Figure()
+        for col in Wd.columns:
+            figw.add_trace(go.Scatter(x=Wd.index, y=Wd[col]*100, mode="lines", stackgroup="w",
+                                      name=col, line=dict(width=0.6),
+                                      hovertemplate=col+": %{y:.1f}%<extra></extra>"))
+        figw.update_layout(height=460, margin=dict(l=10, r=10, t=30, b=10),
+                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                           yaxis=dict(range=[0, 100], ticksuffix="%"),
+                           title=dict(text="动态赋权 8 成员权重堆叠（周度快照）", font=dict(size=14)),
+                           legend=dict(orientation="h", y=-0.15),
+                           font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
+        st.plotly_chart(figw, use_container_width=True)
+        wlast = W.iloc[-1].sort_values(ascending=False)
+        st.caption("最新一期权重：" + "　".join(f"{k} {v*100:.1f}%" for k, v in wlast.items())
+                   + f"。约束带 {0.5/len(W.columns)*100:.1f}%~{1.5/len(W.columns)*100:.1f}%（研报10成员用5%~15%）。"
+                   "与研报图14一致的现象：权重在约束带内快速轮动、无单一策略长期独大。")
+
+    elif block == "丁":
+        sel = st.radio("查看哪个模型的信号窗口", ["动态赋权", "等权合成"], horizontal=True, key="win_model")
+        rr = comp_res[sel]
+        trades = rr["trades"]
+        fw = flat_windows(rr["weekly"])
+        lc_, rc_ = st.columns(2)
+        _llab = [f"{t.进场日期}~{t.出场日期}" for t in trades.itertuples()]
+        _lval = [t.trade_return for t in trades.itertuples()]
+        lc_.plotly_chart(window_bar_fig(_llab, _lval, "#8fa8d3",
+                         f"历次做多信号基准收益（{len(_lval)}段）"), use_container_width=True)
+        _flab = [f"{a.date()}~{b.date()}" for a, b, _ in fw]
+        _fval = [v for _, _, v in fw]
+        rc_.plotly_chart(window_bar_fig(_flab, _fval, "#9dbf9a",
+                         f"历次空仓信号基准收益（{len(_fval)}段，负=躲过下跌）"), use_container_width=True)
+        _lw = [w for w in _lval if w > 0]
+        _fx = [v for v in _fval if v < 0]
+        st.caption(f"【{sel}】做多段胜率 {len(_lw)}/{len(_lval)}；空仓段中 {len(_fx)}/{len(_fval)} 段基准下跌（躲对）。"
+                   "研报图16/17（动态赋权）同口径：做多以 2015.2-5(+55%)、2020.9-2021.1、2019.1-3 贡献最大；"
+                   "空仓以 2018.1-9(−30%)、2021.12-2022.6、2015.5-10 躲跌最多——对照左右图可逐段比对。")
+        _top_long = sorted([(t.进场日期, t.出场日期, t.trade_return) for t in trades.itertuples()],
+                           key=lambda x: -x[2])[:8]
+        _top_flat = sorted(fw, key=lambda x: x[2])[:7]
+        st.plotly_chart(price_windows_fig(bench_df, _top_long, _top_flat, cstart, cend),
                         use_container_width=True)
-        tbl = pd.DataFrame({
-            "指标": METRIC_ORDER,
-            "复现": [fmt(k, m.get(k)) for k in METRIC_ORDER],
-            "研报(全10子策略)": [fmt(k, rep.get(k)) for k in METRIC_ORDER],
-        })
-        st.dataframe(tbl, use_container_width=True, hide_index=True)
-    st.caption("研报列为全区间数值；拖动时间轴只改变「复现」列。⚠ 研报组合含全部 10 个子策略且部分子策略"
-               "数字存在插值泄漏等因素（见七策略对比文档），故复现量级低于研报(16.79%/22.15%)。")
+        st.caption("仿研报图18：标出贡献最大的 8 段做多（红）与 7 段空仓（绿）。研报图18 的绿带集中在 "
+                   "2015下半年/2018/2022 三大熊段、红带在 2015上半年/2019初/2020下半年/2024.9——"
+                   "复现若在同位置着色，说明组合抓住了同样的大级别行情。")
 
-    # ═══ 乙 · 分年度表现（研报表14口径） ═══
-    st.markdown("## 乙 · 分年度表现（研报·表14 口径）")
-    ycols = st.columns(2)
-    for _ci, tag in enumerate(["等权合成", "动态赋权"]):
-        wk = comp_res[tag]["weekly"]
-        ystrat, ybench = yearly_perf(wk)
-        rows = []
-        for y in ystrat.index:
-            row = {"年份": str(y), "复现择时": f"{ystrat[y]*100:.2f}%",
-                   "中证800": f"{ybench[y]*100:.2f}%", "复现超额": f"{(ystrat[y]-ybench[y])*100:+.2f}%"}
-            if tag == "等权合成" and y in REPORT_EQ_YEARLY:
-                rp = REPORT_EQ_YEARLY[y]
-                row["研报择时"] = f"{rp[0]:.2f}%"
-                row["研报超额"] = f"{rp[2]:+.2f}%"
-            rows.append(row)
-        df_y = pd.DataFrame(rows)
-        if tag == "等权合成":
-            df_y = df_y[["年份", "复现择时", "研报择时", "中证800", "复现超额", "研报超额"]]
-        with ycols[_ci]:
-            st.markdown(f"**{tag}**")
-            st.dataframe(df_y, use_container_width=True, hide_index=True, height=430)
-    _neg = [str(y) for y in yearly_perf(comp_res["等权合成"]["weekly"])[0].index
-            if yearly_perf(comp_res["等权合成"]["weekly"])[0][y] < 0]
-    st.caption("对照研报表14：研报等权仅 2022/2023 录得负收益、超额除 2017(−0.66%) 外全为正。"
-               f"复现等权负收益年份：{('、'.join(_neg)) if _neg else '无'}。"
-               "复现在 2015/2018 的超额显著小于研报（57.7%/43.4% 的大头来自研报子策略在这两年的极端表现——"
-               "其中 2015 相当部分依赖插值信贷与部分窗口宏观信号）。")
+    elif block == "戊":
+        _memnames = [n for n, _ in COMPOSITE_MEMBERS]
+        dim_members = {}
+        for _cat, _subs in CATEGORIES.items():
+            _lab = _cat.split(" ", 1)[1]
+            if _lab == "技术指标":
+                _lab = "技术分析"
+            _ms = [n for n, _ in _subs if n in _memnames]
+            if _ms:
+                dim_members[_lab] = _ms
+        _wkf = pd.date_range(cstart, cend, freq="W-FRI")
+        _last8 = _wkf[-8:]
+        _dcol = {"宏观流动性": "#3b7ec0", "信贷预期": "#e6a35c", "跨境资金流": "#9a9a9a",
+                 "衍生品预期": "#b8962e", "技术分析": "#5aa469", "市场资金流": "#b79bd0"}
+        fig19 = go.Figure()
+        for _lab, _ms in dim_members.items():
+            _sd = member_sigs[_ms].mean(axis=1).reindex(_wkf, method="ffill").reindex(_last8)
+            fig19.add_trace(go.Scatter(x=_last8, y=_sd.values, mode="lines+markers", name=_lab,
+                            line=dict(color=_dcol.get(_lab), width=2)))
+        _csig = comp_sigs["动态赋权"].reindex(_wkf, method="ffill").reindex(_last8)
+        fig19.add_trace(go.Scatter(x=_last8, y=_csig.values, mode="lines+markers", name="综合信号",
+                        line=dict(color="#b0432e", width=3, dash="dash")))
+        fig19.update_layout(height=460, margin=dict(l=10, r=10, t=30, b=10),
+                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                            yaxis=dict(range=[-1.05, 1.05], zeroline=True),
+                            title=dict(text="近8周：各维度信号方向 + 动态赋权综合信号", font=dict(size=14)),
+                            legend=dict(orientation="h", y=-0.16),
+                            font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
+        st.plotly_chart(fig19, use_container_width=True)
+        st.caption("维度线 = 该维度成员信号方向的均值（∈[-1,1]，+1 全做多 / −1 全空仓）；红虚线 = 动态赋权综合信号 Σwᵢ·Sⁱ。"
+                   "对照研报图19：可看当下各驱动维度谁在多、谁在空，以及合成后综合信号的净方向。"
+                   "注：本组合 8 成员（技术分析仅长端动量、市场资金流仅融资融券，筹码/大小单未纳入）。")
 
-    # ═══ 丙 · 动态权重变化（研报图14） ═══
-    st.markdown("## 丙 · 动态权重变化（研报·图14 口径）")
-    import plotly.graph_objects as go
-    Wd = W.resample("W-FRI").last().dropna(how="all").loc[cstart:cend]
-    figw = go.Figure()
-    for col in Wd.columns:
-        figw.add_trace(go.Scatter(x=Wd.index, y=Wd[col]*100, mode="lines", stackgroup="w",
-                                  name=col, line=dict(width=0.6),
-                                  hovertemplate=col+": %{y:.1f}%<extra></extra>"))
-    figw.update_layout(height=430, margin=dict(l=10, r=10, t=30, b=10),
-                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                       yaxis=dict(range=[0, 100], ticksuffix="%"),
-                       title=dict(text="动态赋权 8 成员权重堆叠（周度快照）", font=dict(size=14)),
-                       legend=dict(orientation="h", y=-0.15),
-                       font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
-    st.plotly_chart(figw, use_container_width=True)
-    wlast = W.iloc[-1].sort_values(ascending=False)
-    st.caption("最新一期权重：" + "　".join(f"{k} {v*100:.1f}%" for k, v in wlast.items())
-               + f"。约束带 {0.5/len(W.columns)*100:.1f}%~{1.5/len(W.columns)*100:.1f}%（研报10成员用5%~15%）。"
-               "与研报图14一致的现象：权重在约束带内快速轮动、无单一策略长期独大。")
-
-    # ═══ 丁 · 信号窗口分析（研报图16/17/18） ═══
-    st.markdown("## 丁 · 信号窗口分析（研报·图16/17/18 口径）")
-    sel = st.radio("查看哪个模型的信号窗口", ["动态赋权", "等权合成"], horizontal=True, key="win_model")
-    rr = comp_res[sel]
-    trades = rr["trades"]
-    fw = flat_windows(rr["weekly"])
-    lc_, rc_ = st.columns(2)
-    _llab = [f"{t.进场日期}~{t.出场日期}" for t in trades.itertuples()]
-    _lval = [t.trade_return for t in trades.itertuples()]
-    lc_.plotly_chart(window_bar_fig(_llab, _lval, "#8fa8d3",
-                     f"历次做多信号基准收益（{len(_lval)}段）"), use_container_width=True)
-    _flab = [f"{a.date()}~{b.date()}" for a, b, _ in fw]
-    _fval = [v for _, _, v in fw]
-    rc_.plotly_chart(window_bar_fig(_flab, _fval, "#9dbf9a",
-                     f"历次空仓信号基准收益（{len(_fval)}段，负=躲过下跌）"), use_container_width=True)
-    _lw = [w for w in _lval if w > 0]
-    _fx = [v for v in _fval if v < 0]
-    st.caption(f"【{sel}】做多段胜率 {len(_lw)}/{len(_lval)}；空仓段中 {len(_fx)}/{len(_fval)} 段基准下跌（躲对）。"
-               "研报图16/17（动态赋权）同口径：做多以 2015.2-5(+55%)、2020.9-2021.1、2019.1-3 贡献最大；"
-               "空仓以 2018.1-9(−30%)、2021.12-2022.6、2015.5-10 躲跌最多——对照左右图可逐段比对。")
-
-    _top_long = sorted([(t.进场日期, t.出场日期, t.trade_return) for t in trades.itertuples()],
-                       key=lambda x: -x[2])[:8]
-    _top_flat = sorted(fw, key=lambda x: x[2])[:7]
-    st.plotly_chart(price_windows_fig(bench_df, _top_long, _top_flat, cstart, cend),
-                    use_container_width=True)
-    st.caption(f"仿研报图18：标出贡献最大的 8 段做多（红）与 7 段空仓（绿）。研报图18 的绿带集中在 "
-               "2015下半年/2018/2022 三大熊段、红带在 2015上半年/2019初/2020下半年/2024.9——"
-               "复现若在同位置着色，说明组合抓住了同样的大级别行情。")
-
-    # ═══ 戊 · 近8周赋权信号（研报图19，分维度） ═══
-    st.markdown("## 戊 · 近8周赋权信号（研报·图19 口径，分维度）")
-    _memnames = [n for n, _ in COMPOSITE_MEMBERS]
-    dim_members = {}
-    for _cat, _subs in CATEGORIES.items():
-        _lab = _cat.split(" ", 1)[1]
-        if _lab == "技术指标":
-            _lab = "技术分析"
-        _ms = [n for n, _ in _subs if n in _memnames]
-        if _ms:
-            dim_members[_lab] = _ms
-    _wkf = pd.date_range(cstart, cend, freq="W-FRI")
-    _last8 = _wkf[-8:]
-    _dcol = {"宏观流动性": "#3b7ec0", "信贷预期": "#e6a35c", "跨境资金流": "#9a9a9a",
-             "衍生品预期": "#b8962e", "技术分析": "#5aa469", "市场资金流": "#b79bd0"}
-    fig19 = go.Figure()
-    for _lab, _ms in dim_members.items():
-        _sd = member_sigs[_ms].mean(axis=1).reindex(_wkf, method="ffill").reindex(_last8)
-        fig19.add_trace(go.Scatter(x=_last8, y=_sd.values, mode="lines+markers", name=_lab,
-                        line=dict(color=_dcol.get(_lab), width=2)))
-    _csig = comp_sigs["动态赋权"].reindex(_wkf, method="ffill").reindex(_last8)
-    fig19.add_trace(go.Scatter(x=_last8, y=_csig.values, mode="lines+markers", name="综合信号",
-                    line=dict(color="#b0432e", width=3, dash="dash")))
-    fig19.update_layout(height=430, margin=dict(l=10, r=10, t=30, b=10),
-                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                        yaxis=dict(range=[-1.05, 1.05], zeroline=True),
-                        title=dict(text="近8周：各维度信号方向 + 动态赋权综合信号", font=dict(size=14)),
-                        legend=dict(orientation="h", y=-0.16),
-                        font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
-    st.plotly_chart(fig19, use_container_width=True)
-    st.caption("维度线 = 该维度成员信号方向的均值（∈[-1,1]，+1 全做多 / −1 全空仓）；红虚线 = 动态赋权综合信号 Σwᵢ·Sⁱ。"
-               "对照研报图19：可看当下各驱动维度谁在多、谁在空，以及合成后综合信号的净方向。"
-               "注：本组合 8 成员（技术分析仅长端动量、市场资金流仅融资融券，筹码/大小单未纳入）。")
-
-    # ═══ 己 · 各主流指数择时表现（研报图21/表18） ═══
-    st.markdown("## 己 · 组合在各主流指数上的表现（研报·图21/表18 口径）")
-    st.caption("同一动态赋权组合（全市场信号相同、长端动量按各指数 OHLC 重算、权重对各指数收益重新优化）"
-               "分别在 8 个主流指数上回测。全区间口径（不受上方时间轴影响）。")
-    mi = cached_multi_index()
-    _icol = {"上证综指": "#4c78a8", "深证成指": "#b07aa1", "上证50": "#9ecae1", "沪深300": "#f2cf5b",
-             "中证500": "#9a9a9a", "中证800": "#59a14f", "中证1000": "#b0432e", "创业板指": "#f2b48c"}
-    fig21 = go.Figure()
-    for _idx, _d in mi.items():
-        fig21.add_trace(go.Scatter(x=_d["nav"].index, y=_d["nav"].values, mode="lines", name=_idx,
-                        line=dict(color=_icol.get(_idx), width=1.6)))
-    fig21.update_layout(height=460, margin=dict(l=10, r=10, t=30, b=10),
-                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                        title=dict(text="动态赋权组合净值：8 个主流指数", font=dict(size=14)),
-                        legend=dict(orientation="h", y=-0.12),
-                        font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
-    st.plotly_chart(fig21, use_container_width=True)
-    _rows = []
-    for _idx, _d in mi.items():
-        _m = _d["metrics"]
-        _rep = REPORT_MULTI_INDEX[_idx]
-        _rows.append({
-            "指数": _idx,
-            "复现年化": fmt("年化收益率", _m["年化收益率"]), "研报年化": fmt("年化收益率", _rep["年化收益率"]),
-            "复现回撤": fmt("最大回撤", _m["最大回撤"]), "研报回撤": fmt("最大回撤", _rep["最大回撤"]),
-            "复现IR": fmt("年化IR", _m["年化IR"]), "研报IR": fmt("年化IR", _rep["年化IR"]),
-            "复现次胜率": fmt("信号次胜率", _m["信号次胜率"]), "研报次胜率": fmt("信号次胜率", _rep["信号次胜率"]),
-            "复现次数": fmt("信号次数", _m["信号次数"]), "研报次数": fmt("信号次数", _rep["信号次数"]),
-        })
-    st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
-    _best = max(mi.items(), key=lambda kv: kv[1]["metrics"]["年化收益率"])
-    st.caption("对照研报表18：研报 8 指数动态赋权年化 9.3%~29.9%（创业板最高、上证50 最低），中证800 IR 最高 1.73。"
-               f"复现最佳指数：{_best[0]}（年化 {_best[1]['metrics']['年化收益率']*100:.1f}%）。"
-               "复现整体低于研报（同因：8 成员 vs 10、部分子策略研报更强/含插值），"
-               "但跨指数的相对高低排序可与研报表18 逐行比对。")
+    elif block == "己":
+        st.caption("同一动态赋权组合（全市场信号相同、长端动量按各指数 OHLC 重算、权重对各指数收益重新优化）"
+                   "分别在 8 个主流指数上回测。全区间口径（不受时间轴影响；首次约 25 秒）。")
+        mi = cached_multi_index()
+        _icol = {"上证综指": "#4c78a8", "深证成指": "#b07aa1", "上证50": "#9ecae1", "沪深300": "#f2cf5b",
+                 "中证500": "#9a9a9a", "中证800": "#59a14f", "中证1000": "#b0432e", "创业板指": "#f2b48c"}
+        fig21 = go.Figure()
+        for _idx, _d in mi.items():
+            fig21.add_trace(go.Scatter(x=_d["nav"].index, y=_d["nav"].values, mode="lines", name=_idx,
+                            line=dict(color=_icol.get(_idx), width=1.6)))
+        fig21.update_layout(height=480, margin=dict(l=10, r=10, t=30, b=10),
+                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                            title=dict(text="动态赋权组合净值：8 个主流指数", font=dict(size=14)),
+                            legend=dict(orientation="h", y=-0.12),
+                            font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
+        st.plotly_chart(fig21, use_container_width=True)
+        _rows = []
+        for _idx, _d in mi.items():
+            _m = _d["metrics"]
+            _rep = REPORT_MULTI_INDEX[_idx]
+            _rows.append({
+                "指数": _idx,
+                "复现年化": fmt("年化收益率", _m["年化收益率"]), "研报年化": fmt("年化收益率", _rep["年化收益率"]),
+                "复现回撤": fmt("最大回撤", _m["最大回撤"]), "研报回撤": fmt("最大回撤", _rep["最大回撤"]),
+                "复现IR": fmt("年化IR", _m["年化IR"]), "研报IR": fmt("年化IR", _rep["年化IR"]),
+                "复现次胜率": fmt("信号次胜率", _m["信号次胜率"]), "研报次胜率": fmt("信号次胜率", _rep["信号次胜率"]),
+                "复现次数": fmt("信号次数", _m["信号次数"]), "研报次数": fmt("信号次数", _rep["信号次数"]),
+            })
+        st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
+        _best = max(mi.items(), key=lambda kv: kv[1]["metrics"]["年化收益率"])
+        st.caption("对照研报表18：研报 8 指数动态赋权年化 9.3%~29.9%（创业板最高、上证50 最低），中证800 IR 最高 1.73。"
+                   f"复现最佳指数：{_best[0]}（年化 {_best[1]['metrics']['年化收益率']*100:.1f}%）。"
+                   "复现整体低于研报（同因：8 成员 vs 10、部分子策略研报更强/含插值），"
+                   "但跨指数的相对高低排序可与研报表18 逐行比对。")
 
 
 elif VIEW[0] == "advanced":
