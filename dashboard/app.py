@@ -264,59 +264,36 @@ def render_strategy(folder, target, variant=None):
     is_bench = (target == BENCH)
     space = PARAM_SPACE.get(name, {})
     defaults = PARAMS.get(name, {})
-    is_chip = (rkey == "筹码结构")                       # 筹码保持原样；其余走精简版
     kpre = f"{target}|{folder}" + (f"@{gpre}" if is_advanced else "")
-    scan_file = ROOT / "strategies" / folder / ("扫描摘要_进阶.json" if is_advanced else "扫描摘要.json")
-    scan_data = json.load(open(scan_file, encoding="utf-8")) if (is_bench and scan_file.exists()) else {}
-    recovered_file = None if (is_advanced or not is_bench) else ROOT / "strategies" / folder / "复原参数.json"
     groups = load_groups(folder, target)
     g1 = groups.get(f"{gpre}组1") or seed_group(folder, target, f"{gpre}组1")
 
     tag = ("　🚀进阶版" if is_advanced else "")
     tgt_tag = "" if is_bench else f"　【{target} 复刻】"
     st.subheader(name + tag + tgt_tag)
-    if is_chip:                                          # 筹码保持原样：研报原文 + 数学解释
-        st.markdown("**📄 " + ("本进阶版·建仓/平仓逻辑" if is_advanced else "研报原文·策略定义与建仓/平仓逻辑") + "**")
-        st.info(REPORT_METHOD_TEXT.get(name, "（研报未单列该子策略方法）"))
-        if name in MATH_EXPLAIN:
-            with st.expander("📐 数学逻辑解释（点开）"):
-                st.markdown(MATH_EXPLAIN[name])
-    else:                                                # 其余：合并为一块「交易逻辑」（精致小字）
-        st.markdown("**🧭 交易逻辑**")
-        st.markdown(logic_html(STRAT_LOGIC.get(name, "")), unsafe_allow_html=True)
-        if name in MATH_EXPLAIN:
-            with st.expander("公式细节"):
-                st.markdown(MATH_EXPLAIN[name])
+    st.markdown("**🧭 交易逻辑**")
+    st.markdown(logic_html(STRAT_LOGIC.get(name, "")), unsafe_allow_html=True)
+    if name in MATH_EXPLAIN:
+        with st.expander("公式细节"):
+            st.markdown(MATH_EXPLAIN[name])
     if not is_bench:
         idx_dep = getattr(mod, "INDEX_DEPENDENT", False)
         st.caption(f"🔁 {target} 复刻：" + ("本策略为技术信号，信号由 " + target + " 自身 OHLC 重算。"
                    if idx_dep else "本策略为全市场信号，信号与中证800 相同，仅把持有对象换成 " + target + "。")
                    + f"　参数独立存于 我的参数组_{target}.json（无则默认复用你中证800 的组1 作起点）。")
 
-    # ---------------- 参数存档（仅筹码保留） ----------------
-    slot_label = "进阶组" if is_advanced else "组"
-    if is_chip:
-        st.markdown(f"**参数存档**：3 组可保存/载入你调好的参数"
-                    + ("（**进阶组1** 供“用于汇总”）" if is_advanced else "（**组1** 用于全策略汇总）"))
-        lc = st.columns(5)
-        for i in range(3):
-            slot = f"{gpre}组{i+1}"
-            if lc[i].button(f"📂 载入{slot_label}{i+1}", key=f"load{i}_{kpre}", disabled=slot not in groups,
-                            use_container_width=True):
-                for pn, v in groups[slot].items():
-                    sk = f"{kpre}_confirm" if pn == "confirm_weeks" else f"{kpre}_{pn}"
-                    st.session_state[sk] = int(v) if pn == "confirm_weeks" else v
-                st.rerun()
-        if recovered_file is not None and recovered_file.exists() and \
-                lc[3].button("📂 载入复原参数", key=f"loadrec_{kpre}", use_container_width=True):
-            for pn, v in json.load(open(recovered_file, encoding="utf-8")).items():
-                st.session_state[f"{kpre}_{pn}"] = v
-            st.rerun()
-        if "综合最相似" in scan_data and lc[4].button("🎯 载入最相似", key=f"loadsim_{kpre}",
-                                                    use_container_width=True):
-            for pn, v in scan_data["综合最相似"]["参数"].items():
-                st.session_state[f"{kpre}_{pn}"] = v
-            st.rerun()
+    # ---------------- 已保存参数组（载入/覆盖你存好的组1） ----------------
+    saved = groups.get(f"{gpre}组1") or seed_group(folder, target, f"{gpre}组1")
+    bc = st.columns([1, 1, 2])
+    if bc[0].button("📂 已保存参数组", key=f"loadsaved_{kpre}", disabled=not saved,
+                    use_container_width=True):
+        for pn, v in saved.items():
+            sk = f"{kpre}_confirm" if pn == "confirm_weeks" else f"{kpre}_{pn}"
+            if pn == "confirm_weeks" or pn in space or pn in ("ma_kind", "data_mode"):
+                st.session_state[sk] = int(v) if pn == "confirm_weeks" else v
+        st.rerun()
+    save_clicked = bc[1].button("💾 保存当前参数", key=f"savecur_{kpre}", use_container_width=True)
+    bc[2].caption("「已保存参数组」= 我的参数组.json 的组1（全策略汇总/组合用它）；保存 = 用当前参数覆盖。")
 
     # ---------------- 参数（数字框 + 加减号）----------------
     st.markdown("**参数**（数字框旁 −/＋ 按步长增减，也可直接输入；每个旋钮下方小字=它在本策略里的作用）")
@@ -354,9 +331,6 @@ def render_strategy(folder, target, variant=None):
             "信贷数据口径（插值=Wind日度含未来函数/原始；月度阶梯PIT=时点、不插值、无未来函数）",
             list(DATA_MODE_OPTIONS.values()), horizontal=True, key=dm,
             format_func=lambda v: _DM_LABEL.get(v, v))
-    if is_chip:
-        st.caption(f"当前参数：{params}")
-
     c_hold, c_date = st.columns([1, 2])
     cf = f"{kpre}_confirm"
     if cf not in st.session_state:
@@ -369,18 +343,14 @@ def render_strategy(folder, target, variant=None):
                        value=(dmin, dmax), format="YYYY-MM-DD", key=f"date_{kpre}")
     start, end = str(dr[0]), str(dr[1])
 
-    # ---------------- 保存按钮（仅筹码保留） ----------------
-    if is_chip:
-        sc = st.columns(3)
-        for i in range(3):
-            slot = f"{gpre}组{i+1}"
-            if sc[i].button(f"💾 存为{slot_label}{i+1}", key=f"save{i}_{kpre}", use_container_width=True):
-                g = dict(params)
-                g["confirm_weeks"] = int(confirm)
-                data = load_groups(folder, target)
-                data[slot] = g
-                write_groups(folder, data, target)
-                st.success(f"已保存到 {slot}（{group_file(folder, target).name}）：{g}")
+    # ---------------- 保存当前参数 -> 已保存参数组（组1） ----------------
+    if save_clicked:
+        g = dict(params)
+        g["confirm_weeks"] = int(confirm)
+        data = load_groups(folder, target)
+        data[f"{gpre}组1"] = g
+        write_groups(folder, data, target)
+        st.success(f"已保存为「已保存参数组」（{group_file(folder, target).name} · {gpre}组1）：{g}")
 
     # ---------------- 进阶版：用于全策略汇总的开关 ----------------
     if is_advanced:
@@ -450,12 +420,6 @@ def render_strategy(folder, target, variant=None):
     # —— 逐笔交易明细 ——
     st.markdown("**逐笔交易明细（当前参数，每改一次参数即刷新）**")
     st.dataframe(trades, use_container_width=True, hide_index=True)
-
-    # —— 研报原文·结果描述（仅筹码保留）——
-    if is_chip:
-        st.markdown("---")
-        st.markdown("**📄 研报原文·结果描述**")
-        st.info(REPORT_RESULT_TEXT.get(rkey, "（研报未单列该子策略结果）"))
 
 
 # ============================================================ 视图分发

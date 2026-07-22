@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-09 筹码结构 —— 信号构造
-=======================
-复现《行业轮动3.0》筹码分布法（指数维度重构）：
-  · 假设每日存量持仓按当日换手率均匀换仓，当日均价(典型价)作为新换仓筹码的持仓成本；
-  · 逐日滚动累积各价位筹码分布（旧筹码按 1-换手率 衰减，新筹码按换手率注入）；
-  · 阻力筹码 = 持仓成本高于现价的筹码占比；支撑筹码 = 低于现价的筹码占比；
-  · 现价相对加权平均持仓成本收益率 = 赚钱效应（盈利/亏损状态）；
-  · 对阻力/支撑强度做 Zscore，按阈值 p 出信号：
-      盈利 & 支撑强度>p -> 1；亏损 & 阻力强度>p -> -1；否则延续前信号。
+09 筹码结构 —— 信号构造（基础版：÷成交额 绝对筹码）
+====================================================
+按研报原文口径：“将持仓成本高于现价的筹码与成交额比值作为阻力筹码，
+将持仓成本低于现价的筹码与成交额比值作为支撑筹码”。
+逐日按换手率衰减、按当日成交额注入绝对筹码，支撑/阻力强度 = 对应筹码量 ÷ 当日成交额，
+再做滚动 Zscore，配合赚钱效应（盈利/亏损态）按阈值 p 出三态信号。
 """
 import sys
 from pathlib import Path
@@ -23,16 +20,16 @@ from src.config import PARAMS
 NAME = "筹码结构"
 REPORT_KEY = "筹码结构"
 INDICATOR_NAME = "赚钱效应(现价/均成本−1)"   # 面板统计用：>0 市场盈利、<0 亏损
-INDEX_DEPENDENT = True   # 信号由标的自身 OHLC+换手率计算，可跨标的复用（默认中证800）
+INDEX_DEPENDENT = True   # 信号由标的自身 OHLC+成交额+换手率计算，可跨标的复用（默认中证800）
 
 
 def _load_chip(index_name="中证800"):
-    px = load_index_full(index_name)[["date", "high", "low", "close"]].set_index("date")
+    idx = load_index_full(index_name)[["date", "high", "low", "close", "amount"]].set_index("date")
     tn = load_turnover(index_name).set_index("date")["turnover"]
-    df = px.join(tn, how="inner").dropna()
-    res, sup, prof = _chip_distribution(
+    df = idx.join(tn, how="inner").dropna()
+    res, sup, prof = _chip_distribution_abs(
         df["high"].values, df["low"].values, df["close"].values,
-        (df["turnover"] / 100).values)
+        (df["turnover"] / 100).values, df["amount"].values)
     return df, res, sup, prof
 
 
@@ -42,31 +39,32 @@ def indicator(params=None, index_name="中证800"):
     return pd.Series(prof, index=df.index)
 
 
-def _chip_distribution(high, low, close, turn):
-    """逐日累积筹码分布，返回 (阻力筹码占比, 支撑筹码占比, 赚钱效应收益率)。"""
+def _chip_distribution_abs(high, low, close, turn, amount):
+    """按成交额累积【绝对筹码量】，阻力/支撑强度 = 对应筹码量 ÷ 当日成交额。"""
     typical = (high + low + close) / 3.0                       # 当日典型价=持仓成本
     n = len(close)
-    pmin, pmax = typical.min() * 0.95, typical.max() * 1.05
+    pmin, pmax = typical.min() * 0.90, typical.max() * 1.10
     step = pmin * 0.005                                        # 价格网格步长≈0.5%
     grid = np.arange(pmin, pmax + step, step)
-    dist = np.zeros(len(grid))
+    dist = np.zeros(len(grid))                                 # 绝对筹码量（以成交额计）
 
     resistance = np.full(n, np.nan)
     support = np.full(n, np.nan)
     profit = np.full(n, np.nan)
     for t in range(n):
         tr = min(max(turn[t], 0.0), 1.0)                      # 当日换手率(分数)
-        dist *= (1 - tr)                                       # 旧筹码衰减
+        dist *= (1 - tr)                                       # 旧筹码换手衰减
         idx = min(int((typical[t] - pmin) / step), len(grid) - 1)
-        dist[idx] += tr                                        # 新筹码按成本价注入
+        dist[idx] += amount[t]                                # 新筹码按当日成交额注入
         s = dist.sum()
-        if s <= 0:
+        amt = amount[t]
+        if s <= 0 or amt <= 0:
             continue
         c = close[t]
         above = grid > c
-        resistance[t] = dist[above].sum() / s                 # 成本高于现价 -> 阻力
-        support[t] = dist[~above].sum() / s                   # 成本低于现价 -> 支撑
-        profit[t] = c / ((grid * dist).sum() / s) - 1         # 现价/平均成本-1
+        resistance[t] = dist[above].sum() / amt               # 阻力筹码 ÷ 成交额
+        support[t] = dist[~above].sum() / amt                 # 支撑筹码 ÷ 成交额
+        profit[t] = c / ((grid * dist).sum() / s) - 1         # 现价/加权平均成本-1
     return resistance, support, profit
 
 
