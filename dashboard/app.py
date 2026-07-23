@@ -281,6 +281,19 @@ if st.sidebar.button("🔗 子策略相关性（中证800）", use_container_wid
     st.rerun()
 
 
+# 额外参数槽（组2/组3）：仅这些子策略开放；组合/全策略汇总始终只用组1，组2/3 仅备用不影响。
+EXTRA_SLOT_FOLDERS = {"02_信贷预期", "05_期货基差"}
+EXTRA_SLOTS = ("组2", "组3")
+
+
+def _load_slot_into_state(saved, kpre, space):
+    """把某参数槽写进 session_state（供旋钮初值），键与 render_strategy 内一致。"""
+    for pn, v in saved.items():
+        sk = f"{kpre}_confirm" if pn == "confirm_weeks" else f"{kpre}_{pn}"
+        if pn == "confirm_weeks" or pn in space or pn in ("ma_kind", "data_mode"):
+            st.session_state[sk] = int(v) if pn == "confirm_weeks" else v
+
+
 # ============================================================ 单策略渲染（原版/进阶版/多标的共用）
 def render_strategy(folder, target, variant=None):
     is_advanced = variant is not None
@@ -315,13 +328,26 @@ def render_strategy(folder, target, variant=None):
     bc = st.columns([1, 1, 2])
     if bc[0].button("📂 已保存参数组", key=f"loadsaved_{kpre}", disabled=not saved,
                     use_container_width=True):
-        for pn, v in saved.items():
-            sk = f"{kpre}_confirm" if pn == "confirm_weeks" else f"{kpre}_{pn}"
-            if pn == "confirm_weeks" or pn in space or pn in ("ma_kind", "data_mode"):
-                st.session_state[sk] = int(v) if pn == "confirm_weeks" else v
+        _load_slot_into_state(saved, kpre, space)
         st.rerun()
     save_clicked = bc[1].button("💾 保存当前参数", key=f"savecur_{kpre}", use_container_width=True)
     bc[2].caption("「已保存参数组」= 我的参数组.json 的组1（全策略汇总/组合用它）；保存 = 用当前参数覆盖。")
+
+    # ---------------- 额外参数槽（组2/组3）：仅指定子策略；组1 仍是组合/汇总唯一默认 ----------------
+    extra_saves = {}
+    if folder in EXTRA_SLOT_FOLDERS and not is_advanced:
+        st.caption("🗂️ **额外参数槽**：组2、组3 供你另存备用参数随时切换；"
+                   "**组合与全策略汇总始终只用组1**，组2/3 不参与、不影响组合。")
+        for slot in EXTRA_SLOTS:
+            sv = groups.get(slot)
+            sc = st.columns([1, 1, 2])
+            if sc[0].button(f"📂 载入{slot}", key=f"load{slot}_{kpre}", disabled=not sv,
+                            use_container_width=True):
+                _load_slot_into_state(sv, kpre, space)
+                st.rerun()
+            extra_saves[slot] = sc[1].button(f"💾 存为{slot}", key=f"save{slot}_{kpre}",
+                                             use_container_width=True)
+            sc[2].caption(f"{slot}：" + (f"已存 {sv}" if sv else f"空（点“存为{slot}”写入）"))
 
     # ---------------- 参数（数字框 + 加减号）----------------
     st.markdown("**参数**（数字框旁 −/＋ 按步长增减，也可直接输入；每个旋钮下方小字=它在本策略里的作用）")
@@ -379,6 +405,17 @@ def render_strategy(folder, target, variant=None):
         data[f"{gpre}组1"] = g
         write_groups(folder, data, target)
         st.success(f"已保存为「已保存参数组」（{group_file(folder, target).name} · {gpre}组1）：{g}")
+
+    # ---------------- 保存当前参数 -> 额外槽（组2/组3），不改组1、不影响组合 ----------------
+    for slot, clicked in extra_saves.items():
+        if clicked:
+            g = dict(params)
+            g["confirm_weeks"] = int(confirm)
+            data = load_groups(folder, target)
+            data[slot] = g
+            write_groups(folder, data, target)
+            st.success(f"已保存到「{slot}」（{group_file(folder, target).name}）：{g}"
+                       f"　※组合仍用组1，不受影响。")
 
     # ---------------- 进阶版：用于全策略汇总的开关 ----------------
     if is_advanced:
