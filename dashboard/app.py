@@ -153,6 +153,12 @@ def cached_member_signals():
     return member_signals()
 
 
+@st.cache_data(show_spinner="计算子策略连续强度……")
+def cached_member_strengths():
+    from src.composite import member_strengths
+    return member_strengths()
+
+
 @st.cache_data(show_spinner="计算组合在各主流指数上的表现（约1分钟，仅首次）……")
 def cached_multi_index():
     """动态赋权组合在 8 个主流指数上各跑一次，返回 {指数: {metrics, nav}}。"""
@@ -260,10 +266,10 @@ for _cat, _subs in CATEGORIES.items():
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("**③ 组合策略（中证800）**")
-_cb = VIEW[1] if (VIEW[0] == "composite" and len(VIEW) > 1) else ("甲" if VIEW[0] == "composite" else None)
-for _bk, _blab in [("甲", "模型与绩效"), ("乙", "分年度表现"), ("丙", "动态权重变化"),
-                   ("丁", "信号窗口分析"), ("戊", "近8周赋权信号"), ("己", "各主流指数表现")]:
-    if st.sidebar.button(f"🧩 {_bk}·{_blab}", key=f"navcomp_{_bk}", use_container_width=True,
+_cb = VIEW[1] if (VIEW[0] == "composite" and len(VIEW) > 1) else ("1" if VIEW[0] == "composite" else None)
+for _bk, _blab in [("1", "模型与绩效"), ("2", "分年度表现"), ("3", "动态权重变化"),
+                   ("4", "信号窗口分析"), ("5", "近8周赋权信号"), ("6", "各主流指数表现")]:
+    if st.sidebar.button(f"🧩 {_bk} · {_blab}", key=f"navcomp_{_bk}", use_container_width=True,
                          type="primary" if _cb == _bk else "secondary"):
         st.session_state.view = ("composite", _bk)
         st.rerun()
@@ -623,10 +629,10 @@ elif VIEW[0] == "correlation":
 
 elif VIEW[0] == "composite":
     import plotly.graph_objects as go
-    block = VIEW[1] if len(VIEW) > 1 else "甲"
-    _blabs = {"甲": "模型与绩效", "乙": "分年度表现", "丙": "动态权重变化",
-              "丁": "信号窗口分析", "戊": "近8周赋权信号", "己": "各主流指数表现"}
-    st.subheader(f"组合策略 · {block}·{_blabs.get(block, '')}")
+    block = VIEW[1] if len(VIEW) > 1 else "1"
+    _blabs = {"1": "模型与绩效", "2": "分年度表现", "3": "动态权重变化",
+              "4": "信号窗口分析", "5": "近8周赋权信号", "6": "各主流指数表现"}
+    st.subheader(f"组合策略 {block} · {_blabs.get(block, '')}")
     _mem = "、".join(n for n, _ in COMPOSITE_MEMBERS)
     _rsv = "、".join(n for n, _ in COMPOSITE_RESERVED)
     st.caption(f"动态赋权组合 = {len(COMPOSITE_MEMBERS)} 个成员：{_mem}。预留接口：{_rsv}（08 缺数据）。"
@@ -634,7 +640,7 @@ elif VIEW[0] == "composite":
 
     comp_sigs, member_sigs, W = cached_composite_signals()
     bench_df = load_index(BENCH)
-    if block != "己":
+    if block in ("1", "4", "5"):                         # 仅这些块保留时间轴
         dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
         dr = st.slider("🕒 时间轴（拖动选回测区间 / 样本内外）", min_value=dmin, max_value=dmax,
                        value=(dmin, dmax), format="YYYY-MM-DD", key="comp_date")
@@ -642,11 +648,11 @@ elif VIEW[0] == "composite":
     else:
         cstart, cend = "2015-01-05", "2025-11-28"
     comp_res = {}
-    if block in ("甲", "乙", "丁"):
+    if block in ("1", "2", "4"):
         for tag in ["等权合成", "动态赋权"]:
             comp_res[tag] = run_backtest(bench_df, comp_sigs[tag], name=tag, start=cstart, end=cend)
 
-    if block == "甲":
+    if block == "1":
         st.info("**等权合成**：各子策略信号等权平均 → 综合信号>0 满仓、≤0 空仓。\n\n"
                 "**动态赋权**：滚动 120 日约束优化 —— 最小化 ‖|R_t| − Σ wᵢ·Sⁱ·R_t‖²，"
                 "约束 0.5/N ≤ wᵢ ≤ 1.5/N、Σwᵢ=1（研报 N=10 用 5%~15%）。")
@@ -666,7 +672,7 @@ elif VIEW[0] == "composite":
         st.caption("研报列为全区间数值；拖动时间轴只改变「复现」列。⚠ 研报组合含全部 10 个子策略且部分子策略"
                    "数字存在插值泄漏等因素（见七策略对比文档），故复现量级低于研报(16.79%/22.15%)。")
 
-    elif block == "乙":
+    elif block == "2":
         ycols = st.columns(2)
         for _ci, tag in enumerate(["等权合成", "动态赋权"]):
             wk = comp_res[tag]["weekly"]
@@ -693,17 +699,17 @@ elif VIEW[0] == "composite":
                    "复现在 2015/2018 的超额显著小于研报（57.7%/43.4% 的大头来自研报子策略在这两年的极端表现——"
                    "其中 2015 相当部分依赖插值信贷与部分窗口宏观信号）。")
 
-    elif block == "丙":
-        Wd = W.resample("W-FRI").last().dropna(how="all").loc[cstart:cend]
+    elif block == "3":
+        Wd = W.resample("W-FRI").last().dropna(how="all")
         figw = go.Figure()
         for col in Wd.columns:
             figw.add_trace(go.Scatter(x=Wd.index, y=Wd[col]*100, mode="lines", stackgroup="w",
                                       name=col, line=dict(width=0.6),
                                       hovertemplate=col+": %{y:.1f}%<extra></extra>"))
-        figw.update_layout(height=460, margin=dict(l=10, r=10, t=30, b=10),
+        figw.update_layout(height=480, margin=dict(l=10, r=10, t=30, b=10),
                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                            yaxis=dict(range=[0, 100], ticksuffix="%"),
-                           title=dict(text="动态赋权 8 成员权重堆叠（周度快照）", font=dict(size=14)),
+                           title=dict(text="动态赋权 8 成员权重堆叠（全区间·周度快照）", font=dict(size=14)),
                            legend=dict(orientation="h", y=-0.15),
                            font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
         st.plotly_chart(figw, use_container_width=True)
@@ -712,7 +718,7 @@ elif VIEW[0] == "composite":
                    + f"。约束带 {0.5/len(W.columns)*100:.1f}%~{1.5/len(W.columns)*100:.1f}%（研报10成员用5%~15%）。"
                    "与研报图14一致的现象：权重在约束带内快速轮动、无单一策略长期独大。")
 
-    elif block == "丁":
+    elif block == "4":
         sel = st.radio("查看哪个模型的信号窗口", ["动态赋权", "等权合成"], horizontal=True, key="win_model")
         rr = comp_res[sel]
         trades = rr["trades"]
@@ -740,7 +746,8 @@ elif VIEW[0] == "composite":
                    "2015下半年/2018/2022 三大熊段、红带在 2015上半年/2019初/2020下半年/2024.9——"
                    "复现若在同位置着色，说明组合抓住了同样的大级别行情。")
 
-    elif block == "戊":
+    elif block == "5":
+        strengths = cached_member_strengths()
         _memnames = [n for n, _ in COMPOSITE_MEMBERS]
         dim_members = {}
         for _cat, _subs in CATEGORIES.items():
@@ -754,26 +761,29 @@ elif VIEW[0] == "composite":
         _last8 = _wkf[-8:]
         _dcol = {"宏观流动性": "#3b7ec0", "信贷预期": "#e6a35c", "跨境资金流": "#9a9a9a",
                  "衍生品预期": "#b8962e", "技术分析": "#5aa469", "市场资金流": "#b79bd0"}
+        _sw = strengths.reindex(_wkf, method="ffill")
+        _Ww = W.reindex(_wkf, method="ffill")
         fig19 = go.Figure()
         for _lab, _ms in dim_members.items():
-            _sd = member_sigs[_ms].mean(axis=1).reindex(_wkf, method="ffill").reindex(_last8)
+            _sd = _sw[_ms].mean(axis=1).reindex(_last8)
             fig19.add_trace(go.Scatter(x=_last8, y=_sd.values, mode="lines+markers", name=_lab,
-                            line=dict(color=_dcol.get(_lab), width=2)))
-        _csig = comp_sigs["动态赋权"].reindex(_wkf, method="ffill").reindex(_last8)
-        fig19.add_trace(go.Scatter(x=_last8, y=_csig.values, mode="lines+markers", name="综合信号",
-                        line=dict(color="#b0432e", width=3, dash="dash")))
-        fig19.update_layout(height=460, margin=dict(l=10, r=10, t=30, b=10),
+                            line=dict(color=_dcol.get(_lab), width=2, shape="spline")))
+        _comp = (_sw * _Ww).sum(axis=1).reindex(_last8)
+        fig19.add_trace(go.Scatter(x=_last8, y=_comp.values, mode="lines+markers", name="综合信号",
+                        line=dict(color="#b0432e", width=3, dash="dash", shape="spline")))
+        fig19.update_layout(height=470, margin=dict(l=10, r=10, t=30, b=10),
                             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                             yaxis=dict(range=[-1.05, 1.05], zeroline=True),
-                            title=dict(text="近8周：各维度信号方向 + 动态赋权综合信号", font=dict(size=14)),
+                            title=dict(text="近8周：各维度连续强度 + 动态赋权综合信号", font=dict(size=14)),
                             legend=dict(orientation="h", y=-0.16),
                             font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
         st.plotly_chart(fig19, use_container_width=True)
-        st.caption("维度线 = 该维度成员信号方向的均值（∈[-1,1]，+1 全做多 / −1 全空仓）；红虚线 = 动态赋权综合信号 Σwᵢ·Sⁱ。"
-                   "对照研报图19：可看当下各驱动维度谁在多、谁在空，以及合成后综合信号的净方向。"
-                   "注：本组合 8 成员（技术分析仅长端动量、市场资金流仅融资融券，筹码/大小单未纳入）。")
+        st.caption("维度线 = 该维度成员【连续强度】的均值（∈[-1,1]，标准化指标经 tanh 压缩、自动定向为+做多）；"
+                   "红虚线 = 动态赋权综合强度 Σwᵢ·strengthᵢ。与研报图19 一样是连续曲线而非 0/±1 档位——"
+                   "可看当下各驱动维度的力度与方向，以及合成后的净驱动力。"
+                   "注：本组合 8 成员（技术分析仅长端动量、市场资金流仅融资融券）；连续强度仅用于展示，回测仍用离散仓位。")
 
-    elif block == "己":
+    elif block == "6":
         st.caption("同一动态赋权组合（全市场信号相同、长端动量按各指数 OHLC 重算、权重对各指数收益重新优化）"
                    "分别在 8 个主流指数上回测。全区间口径（不受时间轴影响；首次约 25 秒）。")
         mi = cached_multi_index()

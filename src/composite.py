@@ -45,6 +45,37 @@ def member_signals(members=None, target=BACKTEST["benchmark"]):
     return pd.DataFrame(cols, index=idx)
 
 
+def member_strengths(members=None, target=BACKTEST["benchmark"]):
+    """各成员的【连续强度】∈[-1,1]（+做多方向）：标准化各自指标 -> 自动定向 -> tanh 压缩。
+    用于图19（近8周赋权信号）的连续曲线；不改变回测（回测仍用离散仓位）。
+    无 indicator 或异常时回退为离散信号的 EWMA 平滑。"""
+    members = members or COMPOSITE_MEMBERS
+    idx = load_index(target).set_index("date").sort_index().index
+    cols = {}
+    for name, folder in members:
+        mod = load_strategy(folder)
+        params = _group1_params(folder)
+        disc = build_signal_for(mod, params, target).reindex(idx, method="ffill").fillna(0)
+        strength = None
+        if hasattr(mod, "indicator"):
+            try:
+                cont = (mod.indicator(params, index_name=target)
+                        if getattr(mod, "INDEX_DEPENDENT", False) else mod.indicator(params))
+                cont = cont.astype(float)
+                mu = cont.expanding(min_periods=12).mean()
+                sd = cont.expanding(min_periods=12).std()
+                z = ((cont - mu) / sd).reindex(idx, method="ffill")
+                al = pd.concat([z, disc], axis=1).dropna()
+                sgn = -1.0 if (len(al) > 30 and al.iloc[:, 0].corr(al.iloc[:, 1]) < 0) else 1.0
+                strength = np.tanh(sgn * z * 0.9)
+            except Exception:
+                strength = None
+        if strength is None:
+            strength = disc.ewm(span=21, adjust=False).mean()
+        cols[name] = strength.reindex(idx).fillna(0.0).clip(-1, 1)
+    return pd.DataFrame(cols, index=idx)
+
+
 def equal_signal(sigs):
     """等权综合信号 = 各子策略信号的等权平均。"""
     return sigs.mean(axis=1)
