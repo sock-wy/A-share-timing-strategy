@@ -165,14 +165,25 @@ def cached_member_strengths():
 
 @st.cache_data(show_spinner="计算组合在各主流指数上的表现（约1分钟，仅首次）……")
 def cached_multi_index():
-    """动态赋权组合在 8 个主流指数上各跑一次，返回 {指数: {metrics, nav}}。"""
+    """动态赋权+等权两种组合、及买入持有基准，在 8 个主流指数上各跑一次。
+    返回 {指数: {动态:{metrics,nav}, 等权:{metrics,nav}, 基准:{年化,回撤,nav}}}。"""
     from src.composite import run_composites
     from src.config import REPORT_MULTI_INDEX
     out = {}
     for idx in REPORT_MULTI_INDEX:
         res, _, _ = run_composites(target=idx)
-        r = res["动态赋权"]
-        out[idx] = {"metrics": r["metrics"], "nav": r["weekly"]["strat_nav"]}
+        dyn, eq = res["动态赋权"], res["等权合成"]
+        bn = dyn["weekly"]["bench_nav"]                       # 买入持有净值（同区间）
+        n = max(1, len(bn) - 1)
+        b_ann = bn.iloc[-1] ** (52 / n) - 1
+        b_mdd = -(bn / bn.cummax() - 1).min()
+        out[idx] = {
+            "动态": {"metrics": dyn["metrics"], "nav": dyn["weekly"]["strat_nav"]},
+            "等权": {"metrics": eq["metrics"], "nav": eq["weekly"]["strat_nav"]},
+            "基准": {"年化": b_ann, "回撤": b_mdd, "nav": bn},
+            # 兼容旧字段（其它地方若引用）
+            "metrics": dyn["metrics"], "nav": dyn["weekly"]["strat_nav"],
+        }
     return out
 
 
@@ -821,39 +832,87 @@ elif VIEW[0] == "composite":
                    "注：本组合 8 成员（技术分析仅长端动量、市场资金流仅融资融券）；连续强度仅用于展示，回测仍用离散仓位。")
 
     elif block == "6":
-        st.caption("同一动态赋权组合（全市场信号相同、长端动量按各指数 OHLC 重算、权重对各指数收益重新优化）"
-                   "分别在 8 个主流指数上回测。全区间口径（不受时间轴影响；首次约 25 秒）。")
+        st.caption("动态赋权 / 等权 两种组合 + 买入持有基准，分别在 8 个主流指数上回测"
+                   "（全市场信号相同、长端动量按各指数 OHLC 重算、动态权重对各指数收益重新优化）。"
+                   "全区间口径（不受时间轴影响；首次约 25 秒）。")
         mi = cached_multi_index()
         _icol = {"上证综指": "#4c78a8", "深证成指": "#b07aa1", "上证50": "#9ecae1", "沪深300": "#f2cf5b",
                  "中证500": "#9a9a9a", "中证800": "#59a14f", "中证1000": "#b0432e", "创业板指": "#f2b48c"}
+        _names = list(mi.keys())
+
+        # —— ① 三方年化对比柱状图：动态 vs 等权 vs 买入持有 ——
+        figbar = go.Figure()
+        figbar.add_trace(go.Bar(name="动态赋权", x=_names,
+                                y=[mi[i]["动态"]["metrics"]["年化收益率"] * 100 for i in _names],
+                                marker_color="#0e6e62"))
+        figbar.add_trace(go.Bar(name="等权", x=_names,
+                                y=[mi[i]["等权"]["metrics"]["年化收益率"] * 100 for i in _names],
+                                marker_color="#c9a227"))
+        figbar.add_trace(go.Bar(name="买入持有", x=_names,
+                                y=[mi[i]["基准"]["年化"] * 100 for i in _names],
+                                marker_color="#b0b0b0"))
+        figbar.add_trace(go.Scatter(name="研报·动态", x=_names, mode="markers",
+                                    y=[REPORT_MULTI_INDEX[i]["年化收益率"] * 100 for i in _names],
+                                    marker=dict(symbol="diamond", size=9, color="#b0432e",
+                                                line=dict(width=1, color="#7a2d1f"))))
+        figbar.update_layout(barmode="group", height=430, margin=dict(l=10, r=10, t=34, b=10),
+                             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                             title=dict(text="各主流指数 · 年化收益率（%）：动态赋权 vs 等权 vs 买入持有（◆=研报动态）",
+                                        font=dict(size=14)),
+                             legend=dict(orientation="h", y=-0.14),
+                             yaxis=dict(ticksuffix="%", zeroline=True, zerolinecolor="#ccc"),
+                             font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
+        st.plotly_chart(figbar, use_container_width=True)
+
+        # —— ② 净值曲线：可切 动态/等权 ——
+        _which = st.radio("净值曲线口径", ["动态赋权", "等权"], horizontal=True, key="mi_navkind")
+        _key = "动态" if _which == "动态赋权" else "等权"
         fig21 = go.Figure()
-        for _idx, _d in mi.items():
-            fig21.add_trace(go.Scatter(x=_d["nav"].index, y=_d["nav"].values, mode="lines", name=_idx,
+        for _idx in _names:
+            _nav = mi[_idx][_key]["nav"]
+            fig21.add_trace(go.Scatter(x=_nav.index, y=_nav.values, mode="lines", name=_idx,
                             line=dict(color=_icol.get(_idx), width=1.6)))
-        fig21.update_layout(height=480, margin=dict(l=10, r=10, t=30, b=10),
+        fig21.update_layout(height=460, margin=dict(l=10, r=10, t=30, b=10),
                             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                            title=dict(text="动态赋权组合净值：8 个主流指数", font=dict(size=14)),
+                            title=dict(text=f"{_which}组合净值：8 个主流指数", font=dict(size=14)),
                             legend=dict(orientation="h", y=-0.12),
                             font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
         st.plotly_chart(fig21, use_container_width=True)
+
+        # —— ③ 明细表：动态/等权/基准 + 超额 + 研报 ——
         _rows = []
-        for _idx, _d in mi.items():
-            _m = _d["metrics"]
+        for _idx in _names:
+            _dm = mi[_idx]["动态"]["metrics"]; _em = mi[_idx]["等权"]["metrics"]; _b = mi[_idx]["基准"]
             _rep = REPORT_MULTI_INDEX[_idx]
             _rows.append({
                 "指数": _idx,
-                "复现年化": fmt("年化收益率", _m["年化收益率"]), "研报年化": fmt("年化收益率", _rep["年化收益率"]),
-                "复现回撤": fmt("最大回撤", _m["最大回撤"]), "研报回撤": fmt("最大回撤", _rep["最大回撤"]),
-                "复现IR": fmt("年化IR", _m["年化IR"]), "研报IR": fmt("年化IR", _rep["年化IR"]),
-                "复现次胜率": fmt("信号次胜率", _m["信号次胜率"]), "研报次胜率": fmt("信号次胜率", _rep["信号次胜率"]),
-                "复现次数": fmt("信号次数", _m["信号次数"]), "研报次数": fmt("信号次数", _rep["信号次数"]),
+                "动态年化": fmt("年化收益率", _dm["年化收益率"]),
+                "等权年化": fmt("年化收益率", _em["年化收益率"]),
+                "买入持有": fmt("年化收益率", _b["年化"]),
+                "动态超额": fmt("年化收益率", _dm["年化收益率"] - _b["年化"]),
+                "动态回撤": fmt("最大回撤", _dm["最大回撤"]),
+                "等权回撤": fmt("最大回撤", _em["最大回撤"]),
+                "动态IR": fmt("年化IR", _dm["年化IR"]),
+                "动态Calmar": fmt("Calmar比率", _dm["Calmar比率"]),
+                "研报动态年化": fmt("年化收益率", _rep["年化收益率"]),
             })
         st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
-        _best = max(mi.items(), key=lambda kv: kv[1]["metrics"]["年化收益率"])
-        st.caption("对照研报表18：研报 8 指数动态赋权年化 9.3%~29.9%（创业板最高、上证50 最低），中证800 IR 最高 1.73。"
-                   f"复现最佳指数：{_best[0]}（年化 {_best[1]['metrics']['年化收益率']*100:.1f}%）。"
-                   "复现整体低于研报（同因：8 成员 vs 10、部分子策略研报更强/含插值），"
-                   "但跨指数的相对高低排序可与研报表18 逐行比对。")
+
+        # —— ④ 小结：动态 vs 等权 谁赢 + 与研报排序一致性 ——
+        _dyn_ann = np.array([mi[i]["动态"]["metrics"]["年化收益率"] for i in _names])
+        _eq_ann = np.array([mi[i]["等权"]["metrics"]["年化收益率"] for i in _names])
+        _rep_ann = np.array([REPORT_MULTI_INDEX[i]["年化收益率"] for i in _names])
+        _win = int((_dyn_ann > _eq_ann).sum())
+        _rankcorr = pd.Series(_dyn_ann).corr(pd.Series(_rep_ann), method="spearman")
+        _best = _names[int(np.argmax(_dyn_ann))]
+        st.markdown(
+            f"- **动态 vs 等权**：8 个指数里动态赋权年化跑赢等权的有 **{_win}/8** 个"
+            f"（复现口径下动态赋权整体不占优，见「动态权重变化」子块的诊断）。\n"
+            f"- **与研报排序一致性**：复现动态年化 vs 研报表18 动态年化的 Spearman 秩相关 = **{_rankcorr:.2f}**"
+            f"（>0 表示跨指数相对高低与研报同向）。复现最佳指数：**{_best}**"
+            f"（{_dyn_ann.max()*100:.1f}%）。\n"
+            f"- 研报表18：动态赋权年化 9.3%~29.9%（创业板最高、上证50 最低），中证800 IR 最高 1.73。"
+            f"复现整体低于研报（同因：8 成员 vs 10、部分子策略研报更强/含插值）。")
 
 
 elif VIEW[0] == "advanced":
