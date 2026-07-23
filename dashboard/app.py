@@ -281,9 +281,9 @@ if st.sidebar.button("🔗 子策略相关性（中证800）", use_container_wid
     st.rerun()
 
 
-# 额外参数槽（组2/组3）：仅这些子策略开放；组合/全策略汇总始终只用组1，组2/3 仅备用不影响。
+# 额外参数槽（组2）：仅这些子策略开放；组合/全策略汇总始终只用组1，组2 仅备用不影响。
 EXTRA_SLOT_FOLDERS = {"02_信贷预期", "05_期货基差"}
-EXTRA_SLOTS = ("组2", "组3")
+EXTRA_SLOTS = ("组2",)
 
 
 def _load_slot_into_state(saved, kpre, space):
@@ -333,11 +333,11 @@ def render_strategy(folder, target, variant=None):
     save_clicked = bc[1].button("💾 保存当前参数", key=f"savecur_{kpre}", use_container_width=True)
     bc[2].caption("「已保存参数组」= 我的参数组.json 的组1（全策略汇总/组合用它）；保存 = 用当前参数覆盖。")
 
-    # ---------------- 额外参数槽（组2/组3）：仅指定子策略；组1 仍是组合/汇总唯一默认 ----------------
+    # ---------------- 额外参数槽（组2）：仅指定子策略；组1 仍是组合/汇总唯一默认 ----------------
     extra_saves = {}
     if folder in EXTRA_SLOT_FOLDERS and not is_advanced:
-        st.caption("🗂️ **额外参数槽**：组2、组3 供你另存备用参数随时切换；"
-                   "**组合与全策略汇总始终只用组1**，组2/3 不参与、不影响组合。")
+        st.caption("🗂️ **额外参数槽**：组2 供你另存备用参数随时切换；"
+                   "**组合与全策略汇总始终只用组1**，组2 不参与、不影响组合。")
         for slot in EXTRA_SLOTS:
             sv = groups.get(slot)
             sc = st.columns([1, 1, 2])
@@ -385,16 +385,12 @@ def render_strategy(folder, target, variant=None):
             "信贷数据口径（插值=Wind日度含未来函数/原始；月度阶梯PIT=时点、不插值、无未来函数）",
             list(DATA_MODE_OPTIONS.values()), horizontal=True, key=dm,
             format_func=lambda v: _DM_LABEL.get(v, v))
-    c_hold, c_date = st.columns([1, 2])
-    cf = f"{kpre}_confirm"
-    if cf not in st.session_state:
-        st.session_state[cf] = int(g1.get("confirm_weeks", 1))
-    confirm = c_hold.number_input(
-        "信号确认周数（去抖，1=不去抖；调大→信号连续N周同向才切换仓位，过滤单周毛刺）",
-        min_value=1, max_value=12, step=1, key=cf)
+    # 「信号确认周数」旋钮已移除：统一沿用各组已存的 confirm_weeks（默认 1=不去抖）计算，
+    # 不再在面板暴露；现有各组结果不变。
+    confirm = int(g1.get("confirm_weeks", 1))
     dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
-    dr = c_date.slider("回测时间段（拖动做样本内/外测试）", min_value=dmin, max_value=dmax,
-                       value=(dmin, dmax), format="YYYY-MM-DD", key=f"date_{kpre}")
+    dr = st.slider("回测时间段（拖动做样本内/外测试）", min_value=dmin, max_value=dmax,
+                   value=(dmin, dmax), format="YYYY-MM-DD", key=f"date_{kpre}")
     start, end = str(dr[0]), str(dr[1])
 
     # ---------------- 保存当前参数 -> 已保存参数组（组1） ----------------
@@ -406,7 +402,7 @@ def render_strategy(folder, target, variant=None):
         write_groups(folder, data, target)
         st.success(f"已保存为「已保存参数组」（{group_file(folder, target).name} · {gpre}组1）：{g}")
 
-    # ---------------- 保存当前参数 -> 额外槽（组2/组3），不改组1、不影响组合 ----------------
+    # ---------------- 保存当前参数 -> 额外槽（组2），不改组1、不影响组合 ----------------
     for slot, clicked in extra_saves.items():
         if clicked:
             g = dict(params)
