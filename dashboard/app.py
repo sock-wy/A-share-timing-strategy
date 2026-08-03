@@ -151,6 +151,24 @@ def cached_composite_signals():
     return composite_signals()                      # ({标签:综合信号}, 成员信号, 动态权重)
 
 
+@st.cache_data(show_spinner="计算动态赋权不同滚动窗口(60/90/120/180)……")
+def cached_window_compare():
+    """等权 + 动态赋权(窗口 60/90/120/180) 在中证800 全区间的绩效与净值。
+    赋权口径=按过去窗口的收益优化 min‖|R_t| − Σwᵢ·Sᵢ·R_t‖²。返回 {标签:{metrics,nav}}。"""
+    from src.composite import member_signals, equal_signal, dynamic_weights
+    sigs = member_signals()
+    bench = load_index(BENCH)
+    ret = bench.set_index("date")["close"].pct_change().reindex(sigs.index).fillna(0)
+    out = {}
+    r = run_backtest(bench, equal_signal(sigs).rename("signal"), name="等权")
+    out["等权"] = {"metrics": r["metrics"], "nav": r["weekly"]["strat_nav"]}
+    for w in [60, 90, 120, 180]:
+        dyn, _ = dynamic_weights(sigs, ret, window=w)
+        r = run_backtest(bench, dyn, name=f"动态{w}")
+        out[f"动态·{w}日"] = {"metrics": r["metrics"], "nav": r["weekly"]["strat_nav"]}
+    return out
+
+
 @st.cache_data(show_spinner="计算子策略信号……")
 def cached_member_signals():
     from src.composite import member_signals
@@ -719,6 +737,36 @@ elif VIEW[0] == "composite":
             st.dataframe(tbl, use_container_width=True, hide_index=True)
         st.caption("研报列为全区间数值；拖动时间轴只改变「复现」列。⚠ 研报组合含全部 10 个子策略且部分子策略"
                    "数字存在插值泄漏等因素（见七策略对比文档），故复现量级低于研报(16.79%/22.15%)。")
+
+        # —— 动态赋权 滚动窗口敏感性：60/90/120/180（全区间口径） ——
+        st.markdown("### 动态赋权 · 滚动窗口敏感性（60 / 90 / 120 / 180 日）")
+        st.caption("赋权按**过去窗口的收益**优化（min‖|R_t| − Σwᵢ·Sᵢ·R_t‖²，非信号强度）；"
+                   "下表为各窗口全区间绩效，含等权基准对照（不受上方时间轴影响）。")
+        wc = cached_window_compare()
+        wrows = [{"方案": k, "年化": fmt("年化收益率", v["metrics"]["年化收益率"]),
+                  "回撤": fmt("最大回撤", v["metrics"]["最大回撤"]),
+                  "IR": fmt("年化IR", v["metrics"]["年化IR"]),
+                  "Calmar": fmt("Calmar比率", v["metrics"]["Calmar比率"]),
+                  "次数": fmt("信号次数", v["metrics"]["信号次数"])} for k, v in wc.items()]
+        st.dataframe(pd.DataFrame(wrows), use_container_width=True, hide_index=True)
+        _wcol = {"等权": "#c9a227", "动态·60日": "#7fb0a8", "动态·90日": "#3f8f80",
+                 "动态·120日": "#0e6e62", "动态·180日": "#0a4a42"}
+        figw = go.Figure()
+        for k, v in wc.items():
+            figw.add_trace(go.Scatter(x=v["nav"].index, y=v["nav"].values, mode="lines", name=k,
+                           line=dict(color=_wcol.get(k), width=2 if k == "等权" else 1.4,
+                                     dash="dot" if k == "等权" else "solid")))
+        figw.update_layout(height=380, margin=dict(l=10, r=10, t=30, b=10),
+                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                           title=dict(text="等权 vs 动态赋权各窗口 · 净值（中证800 全区间）", font=dict(size=14)),
+                           legend=dict(orientation="h", y=-0.14),
+                           font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
+        st.plotly_chart(figw, use_container_width=True)
+        _best = max((k for k in wc if k != "等权"), key=lambda k: wc[k]["metrics"]["年化收益率"])
+        st.caption(f"复现口径下：动态赋权各窗口年化 {min(wc[k]['metrics']['年化收益率'] for k in wc if k!='等权')*100:.1f}%"
+                   f"~{max(wc[k]['metrics']['年化收益率'] for k in wc if k!='等权')*100:.1f}%，"
+                   f"最佳窗口 {_best}；但**均未超过等权**（年化{wc['等权']['metrics']['年化收益率']*100:.1f}%、"
+                   f"回撤{wc['等权']['metrics']['最大回撤']*100:.1f}%）——低相关成员下等权近乎最优，见「动态权重变化」诊断。")
 
     elif block == "2":
         ycols = st.columns(2)
