@@ -332,7 +332,7 @@ SURF_SPEC = {
     "期货基差": dict(xk="ma_window", xs=[40, 50, 60, 68, 74, 82, 90, 100, 120, 150], yk="p", ys=[0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8],
                  base=dict(smooth_days=3), pt=(74, 1.4)),
     "期权PCR": dict(xk="short_ma", xs=[3, 5, 8, 10, 12, 15, 20, 25], yk="long_ma", ys=[20, 25, 30, 38, 50, 70, 100],
-                base=dict(ma_kind="SMA", threshold=0.01), pt=(15, 30), gap=1.5),
+                base=dict(ma_kind="SMA", threshold=0.005), pt=(15, 30), gap=1.5),
     "融资融券": dict(xk="short_ma", xs=[5, 8, 10, 12, 15, 20, 25, 30, 40], yk="neutral_window", ys=[20, 30, 45, 60, 90, 120, 180],
                  base=dict(), pt=(15, 30)),
     "长端动量": dict(xk="lookback", xs=[80, 100, 110, 120, 130, 150, 170, 190, 210, 250], yk="p", ys=[0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.9, 1.1],
