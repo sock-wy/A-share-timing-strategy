@@ -317,6 +317,53 @@ if st.sidebar.button("🔗 子策略相关性（中证800）", use_container_wid
 
 # 额外参数槽（组2）：仅这些子策略开放；组合/全策略汇总始终只用组1，组2 仅备用不影响。
 EXTRA_SLOT_FOLDERS = {"05_期货基差"}
+
+# 参数曲面配置：每策略两个主旋钮(x,y) + 固定其余(base) + 组1点(pt)，Z=年化%。
+SURF_SPEC = {
+    "宏观流动性": dict(xk="zscore_window", xs=[3, 6, 9, 12, 18, 24, 36], yk="smooth_window", ys=[1, 3, 5, 6, 9, 12],
+                   base=dict(p=0.1, full_window=1), pt=(3, 9)),
+    "信贷预期": dict(xk="short_ma", xs=[10, 15, 20, 25, 30, 40], yk="long_ma", ys=[60, 90, 120, 150, 180, 210, 250],
+                 base=dict(data_mode="插值", yoy_window=400, ma_kind="EMA", threshold=-0.002), pt=(10, 90)),
+    "中美汇率": dict(xk="short_ma", xs=[5, 8, 10, 15, 20, 25, 30], yk="long_ma", ys=[20, 30, 40, 60, 90, 120, 150],
+                 base=dict(ma_kind="EMA", threshold=-0.002), pt=(10, 30)),
+    "中美利差": dict(xk="short_ma", xs=[5, 8, 10, 15, 20, 25, 30], yk="long_ma", ys=[40, 60, 80, 100, 120, 150, 180, 250],
+                 base=dict(ma_kind="SMA", threshold=-0.05), pt=(10, 80)),
+    "期货基差": dict(xk="ma_window", xs=[40, 55, 65, 74, 85, 100, 120, 150], yk="p", ys=[0.5, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8],
+                 base=dict(smooth_days=3), pt=(74, 1.4)),
+    "期权PCR": dict(xk="short_ma", xs=[5, 8, 10, 15, 20, 25, 30], yk="long_ma", ys=[20, 30, 38, 50, 60, 90, 120],
+                base=dict(ma_kind="SMA", threshold=-0.025), pt=(10, 30)),
+    "融资融券": dict(xk="short_ma", xs=[5, 10, 15, 20, 25, 30, 40], yk="neutral_window", ys=[20, 30, 45, 60, 90, 120, 180],
+                 base=dict(), pt=(15, 30)),
+    "长端动量": dict(xk="lookback", xs=[80, 110, 130, 150, 180, 210, 250], yk="p", ys=[0.2, 0.3, 0.4, 0.5, 0.7, 0.9, 1.1],
+                 base=dict(amp_quantile=0.85), pt=(150, 0.4)),
+    "筹码结构": dict(xk="zscore_window", xs=[40, 80, 120, 185, 250, 375], yk="p", ys=[0.3, 0.5, 0.7, 1.0, 1.3],
+                 base=dict(), pt=(120, 0.4)),
+    "筹码结构进阶": dict(xk="zscore_window", xs=[20, 40, 80, 120, 185, 250], yk="p", ys=[0.3, 0.5, 0.7, 1.0, 1.3],
+                   base=dict(), pt=(40, 0.5)),
+}
+
+
+@st.cache_data(show_spinner="扫描参数曲面（首次约10-30秒，之后缓存）……")
+def scan_surface(folder, filename, target, exec_mode, xk, xs, yk, ys, base_items):
+    """在 (xk×yk) 网格上扫年化%，返回 (xs, ys, Z[len(ys)][len(xs)])。confirm=1、当前执行口径、全区间。"""
+    mod = get_module(folder, filename)
+    base = dict(base_items)
+    idx_df = load_index(target)
+    Z = []
+    for yv in ys:
+        row = []
+        for xv in xs:
+            p = dict(base); p[xk] = xv; p[yk] = yv
+            if xk == "short_ma" and yk == "long_ma" and xv >= yv:
+                row.append(float("nan")); continue
+            try:
+                sig = build_signal_for(mod, p, target)
+                m = run_backtest(idx_df, sig, confirm_weeks=1, exec_mode=exec_mode)["metrics"]
+                row.append(round(m["年化收益率"] * 100, 2))
+            except Exception:
+                row.append(float("nan"))
+        Z.append(row)
+    return list(xs), list(ys), Z
 EXTRA_SLOTS = ("组2",)
 
 
@@ -521,12 +568,38 @@ def render_strategy(folder, target, variant=None):
     st.markdown("**逐笔交易明细（当前参数，每改一次参数即刷新）**")
     st.dataframe(trades, use_container_width=True, hide_index=True)
 
-    # —— 参数体检结论（扫描汇总，常显）——
-    note = SCAN_NOTES.get(name) or SCAN_NOTES.get(rkey)
-    if note:
+    # —— 参数曲面（3D：两个主参数 × 年化%，★=组1）——
+    spec = SURF_SPEC.get(name) or SURF_SPEC.get(rkey)
+    if spec:
+        import plotly.graph_objects as go
         st.markdown("---")
-        st.markdown("**📊 参数体检（组1 全区间 / 样本内 2015-2020 / 样本外 2021-2025，confirm=1）**")
-        st.info(note)
+        st.markdown(f"**📊 参数曲面（{spec['xk']} × {spec['yk']} → 年化%，当前执行口径·全区间，可拖动旋转）**")
+        xs, ys, Z = scan_surface(folder, filename, target, exec_mode, spec["xk"],
+                                 tuple(spec["xs"]), spec["yk"], tuple(spec["ys"]),
+                                 tuple(sorted(spec["base"].items())))
+        fig3d = go.Figure(go.Surface(x=xs, y=ys, z=Z, colorscale="RdYlGn", cmin=-2, cmax=12,
+                                     colorbar=dict(title="年化%"), hovertemplate=(
+                                         f"{spec['xk']}=%{{x}}<br>{spec['yk']}=%{{y}}<br>年化=%{{z}}%<extra></extra>")))
+        px_, py_ = spec["pt"]                                  # 组1 点（★）
+        try:
+            zpt = Z[spec["ys"].index(py_)][spec["xs"].index(px_)]
+        except ValueError:
+            zpt = None
+        if zpt is not None and zpt == zpt:                     # 非 NaN
+            fig3d.add_trace(go.Scatter3d(
+                x=[px_], y=[py_], z=[zpt + 0.5], mode="markers+text", text=["组1"],
+                textposition="top center", marker=dict(size=6, color="cyan", symbol="diamond"),
+                name="组1", hovertemplate=f"组1 {spec['xk']}={px_},{spec['yk']}={py_}<br>年化={zpt}%<extra></extra>"))
+        fig3d.update_layout(height=560, margin=dict(l=0, r=0, t=10, b=0), showlegend=False,
+                            scene=dict(xaxis_title=spec["xk"], yaxis_title=spec["yk"], zaxis_title="年化%",
+                                       camera=dict(eye=dict(x=1.6, y=-1.6, z=0.9))),
+                            font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
+        st.plotly_chart(fig3d, use_container_width=True)
+        st.caption("绿=年化高、红=低；★=你的组1。看★是否落在一片绿色高原(稳健)而非孤立尖峰(过拟合)。")
+        note = SCAN_NOTES.get(name) or SCAN_NOTES.get(rkey)
+        if note:
+            with st.expander("文字结论（样本内/外 + 稳健版建议）"):
+                st.markdown(note)
 
 
 
