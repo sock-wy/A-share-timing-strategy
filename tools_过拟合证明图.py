@@ -26,12 +26,12 @@ plt.rcParams['axes.unicode_minus'] = False
 BENCH = load_index('中证800')
 IS = ('2015-01-05', '2020-12-31'); OOS = ('2021-01-01', '2025-11-28')
 
-def ann(folder, params, s, e):
+def ann(folder, params, s, e, cw=1):
     mod = load_strategy(folder); sig = build_signal_for(mod, params, '中证800')
-    return run_backtest(BENCH, sig, confirm_weeks=1, start=s, end=e)['metrics']['年化收益率'] * 100
+    return run_backtest(BENCH, sig, confirm_weeks=cw, start=s, end=e)['metrics']['年化收益率'] * 100
 
 # 每个策略：folder, 固定参数, 两个扫描轴(名/取值), 组1点(x,y), 标题
-def grid_map(folder, base, xk, xs, yk, ys, seg):
+def grid_map(folder, base, xk, xs, yk, ys, seg, cw=1):
     Z = np.full((len(ys), len(xs)), np.nan)
     for iy, yv in enumerate(ys):
         for ix, xv in enumerate(xs):
@@ -39,7 +39,7 @@ def grid_map(folder, base, xk, xs, yk, ys, seg):
             if xk in ('short_ma',) and yk in ('long_ma',) and xv >= yv:
                 continue
             try:
-                Z[iy, ix] = ann(folder, p, *seg)
+                Z[iy, ix] = ann(folder, p, *seg, cw=cw)
             except Exception:
                 pass
     return Z
@@ -49,16 +49,16 @@ STRATS = [
          xk='zscore_window', xs=[2,3,6,9,12,18,24,36], yk='smooth_window', ys=[1,3,5,6,9,12], pt=(3,9)),
     dict(folder='02_信贷预期', title='信贷 (组1: 10/90,EMA,-.002)', base=dict(data_mode='插值', yoy_window=400, ma_kind='EMA', threshold=-0.002),
          xk='short_ma', xs=[5,10,15,20,25,30,40], yk='long_ma', ys=[60,90,120,150,180,210,250], pt=(10,90)),
-    dict(folder='03_中美汇率', title='汇率 (组1≈10/40,EMA,-.004)', base=dict(ma_kind='EMA', threshold=-0.004),
-         xk='short_ma', xs=[5,8,10,15,20,25,30,40], yk='long_ma', ys=[20,30,40,60,90,120,150,180], pt=(10,40)),
+    dict(folder='03_中美汇率', title='汇率 (组1: 10/30,EMA,-.002)', base=dict(ma_kind='EMA', threshold=-0.002),
+         xk='short_ma', xs=[5,8,10,15,20,25,30,40], yk='long_ma', ys=[20,30,40,60,90,120,150,180], pt=(10,30)),
     dict(folder='04_中美利差', title='利差 (组1: 10/80,SMA,-.05)', base=dict(ma_kind='SMA', threshold=-0.05),
          xk='short_ma', xs=[5,8,10,15,20,25,30,40], yk='long_ma', ys=[40,60,80,100,120,150,180,250], pt=(10,80)),
     dict(folder='05_期货基差', title='基差 (组1: sd3,ma74,p1.4)', base=dict(smooth_days=3),
          xk='ma_window', xs=[40,55,65,74,85,100,120,150], yk='p', ys=[0.5,0.8,1.0,1.2,1.4,1.6,1.8], pt=(74,1.4)),
     dict(folder='06_期权PCR', title='PCR (组1: 10/30,SMA,-.025)', base=dict(ma_kind='SMA', threshold=-0.025),
          xk='short_ma', xs=[5,8,10,15,20,25,30,40], yk='long_ma', ys=[20,30,38,50,60,90,120,150], pt=(10,30)),
-    dict(folder='07_融资融券', title='融资 (组1≈45/11)', base=dict(),
-         xk='short_ma', xs=[5,10,15,20,25,30,40,50], yk='neutral_window', ys=[20,30,45,60,90,120,180,250], pt=(11,45)),
+    dict(folder='07_融资融券', title='融资 (组1: neu30/short15, confirm2)', base=dict(), cw=2,
+         xk='short_ma', xs=[5,10,15,20,25,30,40,50], yk='neutral_window', ys=[20,30,45,60,90,120,180,250], pt=(15,30)),
     dict(folder='10_长端动量', title='长端 (组1: L150,amp.85,p0.4)', base=dict(amp_quantile=0.85),
          xk='lookback', xs=[80,110,130,150,180,210,250], yk='p', ys=[0.2,0.3,0.4,0.5,0.7,0.9,1.1], pt=(150,0.4)),
 ]
@@ -66,7 +66,7 @@ STRATS = [
 fig, axes = plt.subplots(len(STRATS), 2, figsize=(11, 3.0 * len(STRATS)))
 for r, S in enumerate(STRATS):
     for c, (seg, lab) in enumerate([(IS, '样本内 2015-2020'), (OOS, '样本外 2021-2025')]):
-        Z = grid_map(S['folder'], S['base'], S['xk'], S['xs'], S['yk'], S['ys'], seg)
+        Z = grid_map(S['folder'], S['base'], S['xk'], S['xs'], S['yk'], S['ys'], seg, cw=S.get('cw', 1))
         ax = axes[r, c]
         im = ax.imshow(Z, aspect='auto', origin='lower', cmap='RdYlGn', vmin=-2, vmax=12)
         ax.set_xticks(range(len(S['xs']))); ax.set_xticklabels(S['xs'], fontsize=7)
