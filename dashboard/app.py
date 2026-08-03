@@ -635,14 +635,18 @@ def render_strategy(folder, target, variant=None):
                      "外": ("2021-01-01", "2025-11-28")}
         seg_label = st.radio("曲面区间", list(_SEG.keys()), horizontal=True, key=f"surfseg_{kpre}")
         s0, e0 = _SEGDATES[_SEG[seg_label]]
-        # 组1点=你当前实际组1(读g1/json)；组2点=已保存的组2(仅有组2槽的策略)。二者都随你改参数移动。
+        # 关键：曲面的「其余参数」= 你当前组1的非轴参数（与上方主面板同一套 params，含 ma_kind/threshold），
+        # 而不是写死的默认值。这样★组1标记、对比表、主面板顶部三处口径一致；改参数曲面与标记一起动。
         def _axpt(d):
             if not d:
                 return None
             vx, vy = d.get(spec["xk"]), d.get(spec["yk"])
             return (vx, vy) if (vx is not None and vy is not None) else None
-        pt1 = _axpt(g1) or spec["pt"]
-        pt2 = _axpt(groups.get("组2")) if folder in EXTRA_SLOT_FOLDERS else None
+        base_dyn = {k: v for k, v in params.items()
+                    if k not in (spec["xk"], spec["yk"], "confirm_weeks")}
+        pt1 = (params.get(spec["xk"], spec["pt"][0]), params.get(spec["yk"], spec["pt"][1]))
+        g2 = groups.get("组2") if folder in EXTRA_SLOT_FOLDERS else None
+        pt2 = _axpt(g2)                                       # 组2：读已保存的组2整套参数
         xsr, ysr = _rng(*spec["xr"]), _rng(*spec["yr"])
         for _p in (pt1, pt2):                                 # 保证组1/组2点一定落在网格上
             if _p:
@@ -652,7 +656,7 @@ def render_strategy(folder, target, variant=None):
                     ysr = sorted(set(ysr + [_p[1]]))
         xs, ys, Z = scan_surface(folder, filename, target, exec_mode, spec["xk"],
                                  tuple(xsr), spec["yk"], tuple(ysr),
-                                 tuple(sorted(spec["base"].items())), gap=spec.get("gap", 0.0),
+                                 tuple(sorted(base_dyn.items())), gap=spec.get("gap", 0.0),
                                  seg=_SEG[seg_label])
         Za = np.array(Z, dtype=float)
         fig3d = go.Figure(go.Surface(x=xs, y=ys, z=Z, colorscale="RdYlGn", cmin=-2, cmax=12,
@@ -673,8 +677,17 @@ def render_strategy(folder, target, variant=None):
                 x=[mx], y=[my], z=[mz + dz], mode="markers+text", text=[label],
                 textposition="top center", marker=dict(size=6, color=color, symbol="diamond"),
                 hovertemplate=f"{label} {spec['xk']}={mx},{spec['yk']}={my}<br>年化={mz}%<extra></extra>"))
-        _add_mark(pt1, "组1", "cyan", 0.5)
-        _add_mark(pt2, "组2", "magenta", 1.0)                  # 组2：紫，随你保存的组2参数移动
+        _add_mark(pt1, "组1", "cyan", 0.5)                     # 组1：落在曲面上（曲面其余参数就是组1的）
+        if g2 and pt2:                                         # 组2：用它自己整套参数的真实年化独立标注
+            _pp2 = {k: v for k, v in g2.items() if k != "confirm_weeks"}
+            _m2 = compute(folder, tuple(sorted(_pp2.items())), int(confirm), s0, e0, filename, target, exec_mode)[0]
+            _z2 = _m2.get("年化收益率")
+            if _z2 is not None and _z2 == _z2:
+                _z2 *= 100
+                fig3d.add_trace(go.Scatter3d(
+                    x=[pt2[0]], y=[pt2[1]], z=[_z2 + 1.0], mode="markers+text", text=["组2"],
+                    textposition="top center", marker=dict(size=6, color="magenta", symbol="diamond"),
+                    hovertemplate=f"组2 {spec['xk']}={pt2[0]},{spec['yk']}={pt2[1]}<br>年化={_z2:.1f}%<extra></extra>"))
         best = None
         if np.isfinite(Za).any():                              # 该区间最高点（◆ 金色）
             iy, ix = np.unravel_index(np.nanargmax(Za), Za.shape)
@@ -694,8 +707,8 @@ def render_strategy(folder, target, variant=None):
                    + "；空白=无意义组合(已剔除)。切到「2021-2025」看曲面是否整体塌下去。")
 
         # —— 组1 vs 本区间最高：绩效对比表 ——
-        def _pt_metrics(vx, vy):
-            pp = dict(spec["base"]); pp[spec["xk"]] = vx; pp[spec["yk"]] = vy
+        def _pt_metrics(vx, vy):                               # 组1/最高：其余参数=组1(base_dyn)，与曲面一致
+            pp = dict(base_dyn); pp[spec["xk"]] = vx; pp[spec["yk"]] = vy
             mm, *_ = compute(folder, tuple(sorted(pp.items())), int(confirm), s0, e0, filename, target, exec_mode)
             return mm
         cmp_rows = []
@@ -710,13 +723,14 @@ def render_strategy(folder, target, variant=None):
                              "年化": fmt("年化收益率", mb.get("年化收益率")), "最大回撤": fmt("最大回撤", mb.get("最大回撤")),
                              "IR": fmt("年化IR", mb.get("年化IR")), "次数": fmt("信号次数", mb.get("信号次数")),
                              "次胜率": fmt("信号次胜率", mb.get("信号次胜率"))})
-        if pt2:
-            m2 = _pt_metrics(pt2[0], pt2[1])
+        if g2 and pt2:                                         # 组2：用它自己整套参数（可能与组1的非轴参数不同）
+            _pp2 = {k: v for k, v in g2.items() if k != "confirm_weeks"}
+            m2, *_ = compute(folder, tuple(sorted(_pp2.items())), int(confirm), s0, e0, filename, target, exec_mode)
             cmp_rows.append({"": "🟪 你的组2", f"{spec['xk']}": pt2[0], f"{spec['yk']}": pt2[1],
                              "年化": fmt("年化收益率", m2.get("年化收益率")), "最大回撤": fmt("最大回撤", m2.get("最大回撤")),
                              "IR": fmt("年化IR", m2.get("年化IR")), "次数": fmt("信号次数", m2.get("信号次数")),
                              "次胜率": fmt("信号次胜率", m2.get("信号次胜率"))})
-        st.markdown(f"**🏆 组1 vs 本区间最高（{seg_label}，其余参数固定为组1值）**")
+        st.markdown(f"**🏆 组1 vs 本区间最高（{seg_label}，其余参数=你当前组1值）**")
         st.dataframe(pd.DataFrame(cmp_rows), use_container_width=True, hide_index=True)
 
 
