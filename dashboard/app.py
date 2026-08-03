@@ -39,7 +39,7 @@ from src.config import (REPORT_PERF, PARAM_SPACE, PARAMS, CATEGORIES,
                         DATA_MODE_STRATEGIES, DATA_MODE_OPTIONS, PARAM_HELP,
                         STRAT_LOGIC, COMPOSITE_MEMBERS, COMPOSITE_RESERVED,
                         REPORT_CORR, REPORT_CORR_ORDER, REPORT_CORR_TEXT, REPORT_EQ_YEARLY,
-                        REPORT_MULTI_INDEX)
+                        REPORT_MULTI_INDEX, SCAN_NOTES)
 from src.composite import run_composites
 
 STRATS = {
@@ -137,13 +137,13 @@ def compute_group1(folder, target=BENCH):
             confirm = 1                                   # 全局统一 confirm=1（确认周数旋钮已移除）
             params = {k: val for k, val in g.items() if k != "confirm_weeks"}
             items = tuple(sorted(params.items())) if params else None
-            return compute(folder, items, confirm, filename=v["file"], target=target)
+            return compute(folder, items, confirm, filename=v["file"], target=target, exec_mode="next_open")
     g = cfg.get("组1")
     if g:
         confirm = 1                                       # 全局统一 confirm=1（旋钮已移除）
         params = {k: val for k, val in g.items() if k != "confirm_weeks"}
-        return compute(folder, tuple(sorted(params.items())), confirm, target=target)
-    return compute(folder, None, target=target)
+        return compute(folder, tuple(sorted(params.items())), confirm, target=target, exec_mode="next_open")
+    return compute(folder, None, target=target, exec_mode="next_open")
 
 
 @st.cache_data(show_spinner="计算组合信号（含动态赋权滚动优化）……")
@@ -161,11 +161,11 @@ def cached_window_compare():
     bench = load_index(BENCH)
     ret = bench.set_index("date")["close"].pct_change().reindex(sigs.index).fillna(0)
     out = {}
-    r = run_backtest(bench, equal_signal(sigs).rename("signal"), name="等权")
+    r = run_backtest(bench, equal_signal(sigs).rename("signal"), name="等权", exec_mode="next_open")
     out["等权"] = {"metrics": r["metrics"], "nav": r["weekly"]["strat_nav"]}
     for w in [60, 90, 120, 180]:
         dyn, _ = dynamic_weights(sigs, ret, window=w)
-        r = run_backtest(bench, dyn, name=f"动态{w}")
+        r = run_backtest(bench, dyn, name=f"动态{w}", exec_mode="next_open")
         out[f"动态·{w}日"] = {"metrics": r["metrics"], "nav": r["weekly"]["strat_nav"]}
     return out
 
@@ -190,7 +190,7 @@ def cached_multi_index():
     from src.config import REPORT_MULTI_INDEX
     out = {}
     for idx in REPORT_MULTI_INDEX:
-        res, _, _ = run_composites(target=idx)
+        res, _, _ = run_composites(target=idx, exec_mode="next_open")
         dyn, eq = res["动态赋权"], res["等权合成"]
         bn = dyn["weekly"]["bench_nav"]                       # 买入持有净值（同区间）
         n = max(1, len(bn) - 1)
@@ -316,7 +316,7 @@ if st.sidebar.button("🔗 子策略相关性（中证800）", use_container_wid
 
 
 # 额外参数槽（组2）：仅这些子策略开放；组合/全策略汇总始终只用组1，组2 仅备用不影响。
-EXTRA_SLOT_FOLDERS = {"02_信贷预期", "05_期货基差"}
+EXTRA_SLOT_FOLDERS = {"05_期货基差"}
 EXTRA_SLOTS = ("组2",)
 
 
@@ -346,11 +346,10 @@ def render_strategy(folder, target, variant=None):
     tag = ("　🚀进阶版" if is_advanced else "")
     tgt_tag = "" if is_bench else f"　【{target} 复刻】"
     st.subheader(name + tag + tgt_tag)
-    st.markdown("**🧭 交易逻辑**")
+    st.markdown("**🧭 交易逻辑 & 公式**")
     st.markdown(logic_html(STRAT_LOGIC.get(name, "")), unsafe_allow_html=True)
     if name in MATH_EXPLAIN:
-        with st.expander("公式细节"):
-            st.markdown(MATH_EXPLAIN[name])
+        st.markdown(MATH_EXPLAIN[name])                   # 公式常显，不再折叠
     if not is_bench:
         idx_dep = getattr(mod, "INDEX_DEPENDENT", False)
         st.caption(f"🔁 {target} 复刻：" + ("本策略为技术信号，信号由 " + target + " 自身 OHLC 重算。"
@@ -423,10 +422,10 @@ def render_strategy(folder, target, variant=None):
     # 如融资曾存 confirm=2）；这样单策略页/汇总/组合三处口径一致，不去抖。
     confirm = 1
     c_exec, c_date = st.columns([1, 2])
-    _EXECS = {"收盘执行（研报口径）": "close", "次周开盘执行（更真实）": "next_open"}
+    _EXECS = {"次周开盘执行（版本2默认）": "next_open", "收盘执行（研报口径）": "close"}
     exec_label = c_exec.radio(
         "执行口径（信号均于周五收盘确定）", list(_EXECS.keys()), horizontal=False, key=f"exec_{kpre}",
-        help="收盘=周五收盘价成交(可比研报，略乐观)；次周开盘=下周一开盘价成交(去除“用刚看到的收盘价成交”的乐观，无未来函数)。")
+        help="次周开盘=下周一开盘价成交(版本2默认，去除“用刚看到的收盘价成交”的乐观，无未来函数)；收盘=周五收盘价成交(研报口径，略乐观)。")
     exec_mode = _EXECS[exec_label]
     dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
     dr = c_date.slider("回测时间段（拖动做样本内/外测试）", min_value=dmin, max_value=dmax,
@@ -521,6 +520,13 @@ def render_strategy(folder, target, variant=None):
     # —— 逐笔交易明细 ——
     st.markdown("**逐笔交易明细（当前参数，每改一次参数即刷新）**")
     st.dataframe(trades, use_container_width=True, hide_index=True)
+
+    # —— 参数体检结论（扫描汇总，常显）——
+    note = SCAN_NOTES.get(name) or SCAN_NOTES.get(rkey)
+    if note:
+        st.markdown("---")
+        st.markdown("**📊 参数体检（组1 全区间 / 样本内 2015-2020 / 样本外 2021-2025，confirm=1）**")
+        st.info(note)
 
 
 
@@ -723,7 +729,7 @@ elif VIEW[0] == "composite":
     comp_res = {}
     if block in ("1", "2", "4"):
         for tag in ["等权合成", "动态赋权"]:
-            comp_res[tag] = run_backtest(bench_df, comp_sigs[tag], name=tag, start=cstart, end=cend)
+            comp_res[tag] = run_backtest(bench_df, comp_sigs[tag], name=tag, start=cstart, end=cend, exec_mode="next_open")
 
     if block == "1":
         st.info("**等权合成**：各子策略信号等权平均 → 综合信号>0 满仓、≤0 空仓。\n\n"

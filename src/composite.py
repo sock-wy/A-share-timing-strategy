@@ -122,13 +122,14 @@ def composite_signals(members=None, target=BACKTEST["benchmark"], window=120):
 
 
 def run_composites(members=None, target=BACKTEST["benchmark"], window=120,
-                   start=None, end=None):
-    """跑等权 + 动态赋权两个组合，返回 (结果dict, 成员信号, 动态权重)。"""
+                   start=None, end=None, exec_mode="close"):
+    """跑等权 + 动态赋权两个组合，返回 (结果dict, 成员信号, 动态权重)。
+    exec_mode: 'close'(周五收盘成交) / 'next_open'(次周开盘成交,版本2默认)。"""
     comp, sigs, W = composite_signals(members, target, window)
     bench = load_index(target)
     results = {}
     for tag, sig in comp.items():
-        results[tag] = run_backtest(bench, sig, name=tag, start=start, end=end)
+        results[tag] = run_backtest(bench, sig, name=tag, start=start, end=end, exec_mode=exec_mode)
     return results, sigs, W
 
 
