@@ -318,6 +318,10 @@ if st.sidebar.button("🔗 子策略相关性（中证800）", use_container_wid
 # 额外参数槽（组2）：仅这些子策略开放；组合/全策略汇总始终只用组1，组2 仅备用不影响。
 EXTRA_SLOT_FOLDERS = {"05_期货基差"}
 
+# 需要“前段/后段过拟合测试”的策略：自由度高/信号弱/易出尖峰，能凭空拟合出漂亮曲线。
+# 其余（经济驱动、方向由逻辑锁定、可调参数少）几乎无过拟合空间，只看曲面是否平台即可。
+HIGH_DOF_STRATEGIES = {"筹码结构", "筹码结构进阶", "长端动量", "期货基差"}
+
 def _rng(a, b, s):
     """生成 [a, b] 步长 s 的取值列表（浮点按步长小数位四舍五入）。"""
     n = int(round((b - a) / s)) + 1
@@ -577,21 +581,47 @@ def render_strategy(folder, target, variant=None):
     st.markdown("**逐笔交易明细（当前参数，每改一次参数即刷新）**")
     st.dataframe(trades, use_container_width=True, hide_index=True)
 
-    # —— 当前参数的 样本内/外 体检（全 / 内 / 外 年化）——
+    # —— 择时价值：α/β 分解 + 分年度 vs 大盘（复用 wk，不额外回测）——
     st.markdown("---")
-    st.markdown("**🔬 前段 vs 后段 年化（当前参数，次周开盘·严格满窗）**")
-    def _ann(s, e):
-        mm, *_ = compute(folder, tuple(sorted(params.items())), int(confirm), s, e, filename, target, exec_mode)
-        return mm.get("年化收益率")
-    a_full = _ann("2015-01-05", "2025-11-28")
-    a_is = _ann("2015-01-05", "2020-12-31")
-    a_oos = _ann("2021-01-01", "2025-11-28")
-    cc = st.columns(3)
-    cc[0].metric("全区间 2015-2025", f"{a_full*100:.2f}%")
-    cc[1].metric("前段 2015-2020", f"{a_is*100:.2f}%")
-    cc[2].metric("后段 2021-2025", f"{a_oos*100:.2f}%", delta=f"{(a_oos-a_is)*100:+.1f}pp vs前段")
-    st.caption("同一组参数在 2015-2020(前段) 与 2021-2025(后段) 各回测一次："
-               "后段≈前段 = 参数可靠；后段远低于前段 = 只是拟合了历史(过拟合)。")
+    _r = wk["strat_ret"].fillna(0); _rm = wk["ret"].fillna(0)
+    if len(_r) > 20 and _rm.std() > 0:
+        _b, _a = np.polyfit(_rm.values, _r.values, 1)          # r = a + b·r_market
+        _aann = (1 + _a) ** BACKTEST["weeks_per_year"] - 1
+        _corr = _r.corr(_rm); _expo = (wk["position"] > 0).mean()
+        st.markdown("**🎯 择时价值分解（对大盘回归）**")
+        ac = st.columns(4)
+        ac[0].metric("年化α（择时超额）", f"{_aann*100:.2f}%")
+        ac[1].metric("β（对大盘）", f"{_b:.2f}")
+        ac[2].metric("与大盘相关性", f"{_corr:.2f}")
+        ac[3].metric("平均市场敞口", f"{_expo*100:.0f}%")
+        st.caption("α>0 且 β/相关性低 = 收益主要来自**择时**（避开回撤、抓趋势），不是躺赢大盘beta；"
+                   "α≈0、β≈1 才是纯beta。这类信号本质是‘择时/趋势’风格，不是选股alpha。")
+        _sy = (1 + _r).groupby(_r.index.year).prod() - 1
+        _my = (1 + _rm).groupby(_rm.index.year).prod() - 1
+        _yt = pd.DataFrame({"年份": _sy.index.astype(int),
+                            "策略": [fmt("年化收益率", v) for v in _sy.values],
+                            "中证800": [fmt("年化收益率", v) for v in _my.values],
+                            "超额": [fmt("年化收益率", s - m) for s, m in zip(_sy.values, _my.values)]})
+        with st.expander("分年度：策略 vs 大盘（看熊市防守 / 趋势参与，趋势策略按年波动是常态）"):
+            st.dataframe(_yt, use_container_width=True, hide_index=True)
+
+    # —— 过拟合测试：仅高自由度策略才需要（并说清为什么）——
+    is_high_dof = (name in HIGH_DOF_STRATEGIES) or (rkey in HIGH_DOF_STRATEGIES)
+    if is_high_dof:
+        st.markdown("**🔬 前段 vs 后段 年化（过拟合测试）**")
+        def _ann(s, e):
+            mm, *_ = compute(folder, tuple(sorted(params.items())), int(confirm), s, e, filename, target, exec_mode)
+            return mm.get("年化收益率")
+        a_is = _ann("2015-01-05", "2020-12-31"); a_oos = _ann("2021-01-01", "2025-11-28")
+        oc = st.columns(2)
+        oc[0].metric("前段 2015-2020", f"{a_is*100:.2f}%")
+        oc[1].metric("后段 2021-2025", f"{a_oos*100:.2f}%", delta=f"{(a_oos-a_is)*100:+.1f}pp")
+        st.caption(f"**为什么{name}要做过拟合测试**：它自由度高/信号弱（{'多阈值+振幅分位+回看窗' if name.startswith('长端') else ('筹码分布+Zscore窗+阈值，一条指数路径没横截面结构' if '筹码' in name else '近月基差信号弱、易在某个ma_window上出尖峰')}），"
+                   "能凭空拟合出漂亮历史曲线。所以用前5年选参、后5年验：后段≈前段=真信号；后段大幅塌=过拟合。")
+    else:
+        st.caption(f"ℹ️ **{name}不做前段/后段过拟合测试**：它的做多方向由经济逻辑锁定（如信贷扩张=做多、"
+                   "利差走阔=做多），可调的只有几个均线窗口，几乎没有过拟合空间——后段若衰减多是该经济关系在那段时间失效(regime)，"
+                   "不是参数过拟合。稳健性直接看下方曲面：★是否落在一片平台(而非孤立尖峰)。")
 
     # —— 参数曲面（3D：两个主参数 × 年化%，★=组1，◆=该区间最高，可切 全/内/外）——
     spec = SURF_SPEC.get(name) or SURF_SPEC.get(rkey)
