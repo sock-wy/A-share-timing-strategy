@@ -134,13 +134,13 @@ def compute_group1(folder, target=BENCH):
     if v:
         g = cfg.get(f"{v['gpre']}组1")
         if g:
-            confirm = int(g.get("confirm_weeks", 1))
+            confirm = 1                                   # 全局统一 confirm=1（确认周数旋钮已移除）
             params = {k: val for k, val in g.items() if k != "confirm_weeks"}
             items = tuple(sorted(params.items())) if params else None
             return compute(folder, items, confirm, filename=v["file"], target=target)
     g = cfg.get("组1")
     if g:
-        confirm = int(g.get("confirm_weeks", 1))
+        confirm = 1                                       # 全局统一 confirm=1（旋钮已移除）
         params = {k: val for k, val in g.items() if k != "confirm_weeks"}
         return compute(folder, tuple(sorted(params.items())), confirm, target=target)
     return compute(folder, None, target=target)
@@ -419,9 +419,9 @@ def render_strategy(folder, target, variant=None):
             "信贷数据口径（插值=Wind日度含未来函数/原始；月度阶梯PIT=时点、不插值、无未来函数）",
             list(DATA_MODE_OPTIONS.values()), horizontal=True, key=dm,
             format_func=lambda v: _DM_LABEL.get(v, v))
-    # 「信号确认周数」旋钮已移除：统一沿用各组已存的 confirm_weeks（默认 1=不去抖）计算，
-    # 不再在面板暴露；现有各组结果不变。
-    confirm = int(g1.get("confirm_weeks", 1))
+    # 「信号确认周数」旋钮已移除，且全局统一 confirm=1（覆盖各组 json 里可能残留的旧值，
+    # 如融资曾存 confirm=2）；这样单策略页/汇总/组合三处口径一致，不去抖。
+    confirm = 1
     c_exec, c_date = st.columns([1, 2])
     _EXECS = {"收盘执行（研报口径）": "close", "次周开盘执行（更真实）": "next_open"}
     exec_label = c_exec.radio(
