@@ -12,27 +12,28 @@ import pandas as pd
 
 
 def rolling_zscore(s: pd.Series, window: int) -> pd.Series:
-    """滚动 Zscore：(x - 滚动均值) / 滚动标准差。"""
-    mean = s.rolling(window, min_periods=max(2, window // 3)).mean()
-    std = s.rolling(window, min_periods=max(2, window // 3)).std()
+    """滚动 Zscore：(x - 滚动均值) / 滚动标准差。**严格满窗**：窗口未满不出值。"""
+    mean = s.rolling(window, min_periods=window).mean()
+    std = s.rolling(window, min_periods=window).std()
     return (s - mean) / std
 
 
 def ma_deviation(s: pd.Series, window: int) -> pd.Series:
-    """均线偏离度：(x - MA) / MA。用于期货基差偏离度。"""
-    ma = s.rolling(window, min_periods=max(2, window // 3)).mean()
+    """均线偏离度：(x - MA) / MA。**严格满窗**。"""
+    ma = s.rolling(window, min_periods=window).mean()
     return (s - ma) / ma
 
 
 def ma_diff(s: pd.Series, short: int, long: int, kind: str = "SMA") -> pd.Series:
-    """长短均线差：短均线 - 长均线。>0 表示上行动能。
+    """长短均线差：短均线 - 长均线。>0 表示上行动能。**严格满窗**：窗口未满不出值。
 
     kind='SMA' 简单移动平均（等权）；'EMA' 指数移动平均（近端加权，滞后更小）。
     信号定义不变——仍是“长短均线差 → 方向”，只是均线类型可选。
     """
     if kind == "EMA":
-        return s.ewm(span=short, adjust=False).mean() - s.ewm(span=long, adjust=False).mean()
-    return s.rolling(short, min_periods=1).mean() - s.rolling(long, min_periods=1).mean()
+        return (s.ewm(span=short, adjust=False, min_periods=short).mean()
+                - s.ewm(span=long, adjust=False, min_periods=long).mean())
+    return s.rolling(short, min_periods=short).mean() - s.rolling(long, min_periods=long).mean()
 
 
 def sign_signal(x: pd.Series, positive_is_long=True) -> pd.Series:

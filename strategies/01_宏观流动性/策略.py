@@ -27,15 +27,13 @@ INDICATOR_NAME = "流动性供给强度(Zscore)"
 def indicator(params=None):
     """原始择时指标：平滑净投放的滚动 Zscore（流动性供给强度）。"""
     p = params or PARAMS[NAME]
-    full = int(p.get("full_window", 0)) == 1
     net = load_macro_liquidity().set_index("date")["net_injection"]
     sw = int(p["smooth_window"])
-    smoothed = net.rolling(sw, min_periods=sw if full else 1).mean()   # 平滑
-    z = rolling_zscore(smoothed, p["zscore_window"])                   # 供给强度
-    if full:                                                            # Zscore 也要求满窗
-        zw = int(p["zscore_window"])
-        z = z.where(smoothed.notna())
-        z.iloc[:sw + zw - 2] = np.nan
+    smoothed = net.rolling(sw, min_periods=sw).mean()                  # 平滑（严格满窗）
+    z = rolling_zscore(smoothed, p["zscore_window"])                   # 供给强度（严格满窗）
+    zw = int(p["zscore_window"])                                       # 平滑+Zscore 均满窗才出值
+    z = z.where(smoothed.notna())
+    z.iloc[:sw + zw - 2] = np.nan
     return z
 
 

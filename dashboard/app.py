@@ -106,7 +106,7 @@ def get_module(folder, filename="策略.py"):
 
 @st.cache_data(show_spinner=False)
 def compute(folder, params_items, confirm=1, start=None, end=None,
-            filename="策略.py", target=BENCH, exec_mode="close"):
+            filename="策略.py", target=BENCH, exec_mode="next_open"):
     """跑一次回测（按标的）。params_items=None 用默认参数；否则用传入参数（元组化以便缓存）。
     exec_mode: 'close'(周五收盘成交,原口径) / 'next_open'(次周开盘成交,更真实)。"""
     mod = get_module(folder, filename)
@@ -318,47 +318,54 @@ if st.sidebar.button("🔗 子策略相关性（中证800）", use_container_wid
 # 额外参数槽（组2）：仅这些子策略开放；组合/全策略汇总始终只用组1，组2 仅备用不影响。
 EXTRA_SLOT_FOLDERS = {"05_期货基差"}
 
-# 参数曲面配置：每策略两个主旋钮(x,y) + 固定其余(base) + 组1点(pt)，Z=年化%。
+# 参数曲面配置：每策略两个主旋钮(x,y)+固定其余(base)+组1点(pt)；网格更细。
+# gap：长短均线策略要求 long_ma >= short_ma*gap，短≈长的无意义组合置空。
 SURF_SPEC = {
-    "宏观流动性": dict(xk="zscore_window", xs=[3, 6, 9, 12, 18, 24, 36], yk="smooth_window", ys=[1, 3, 5, 6, 9, 12],
-                   base=dict(p=0.1, full_window=1), pt=(3, 9)),
-    "信贷预期": dict(xk="short_ma", xs=[10, 15, 20, 25, 30, 40], yk="long_ma", ys=[60, 90, 120, 150, 180, 210, 250],
-                 base=dict(data_mode="插值", yoy_window=400, ma_kind="EMA", threshold=-0.002), pt=(10, 90)),
-    "中美汇率": dict(xk="short_ma", xs=[5, 8, 10, 15, 20, 25, 30], yk="long_ma", ys=[20, 30, 40, 60, 90, 120, 150],
-                 base=dict(ma_kind="EMA", threshold=-0.002), pt=(10, 30)),
-    "中美利差": dict(xk="short_ma", xs=[5, 8, 10, 15, 20, 25, 30], yk="long_ma", ys=[40, 60, 80, 100, 120, 150, 180, 250],
-                 base=dict(ma_kind="SMA", threshold=-0.05), pt=(10, 80)),
-    "期货基差": dict(xk="ma_window", xs=[40, 55, 65, 74, 85, 100, 120, 150], yk="p", ys=[0.5, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8],
+    "宏观流动性": dict(xk="zscore_window", xs=[3, 4, 6, 8, 10, 12, 15, 18, 24, 36], yk="smooth_window", ys=[1, 2, 3, 4, 5, 6, 9],
+                   base=dict(p=0.1), pt=(12, 3)),
+    "信贷预期": dict(xk="short_ma", xs=[5, 8, 10, 12, 15, 20, 25, 30], yk="long_ma", ys=[90, 120, 150, 180, 210, 250],
+                 base=dict(data_mode="插值", yoy_window=330, ma_kind="SMA", threshold=-0.002), pt=(15, 210), gap=3.0),
+    "中美汇率": dict(xk="short_ma", xs=[3, 5, 8, 10, 12, 15, 20, 25], yk="long_ma", ys=[20, 25, 30, 40, 50, 60, 80, 120],
+                 base=dict(ma_kind="SMA", threshold=-0.01), pt=(20, 30), gap=1.5),
+    "中美利差": dict(xk="short_ma", xs=[3, 5, 8, 10, 12, 15, 20, 25], yk="long_ma", ys=[40, 60, 80, 100, 120, 150, 200, 250],
+                 base=dict(ma_kind="SMA", threshold=-0.05), pt=(10, 80), gap=2.0),
+    "期货基差": dict(xk="ma_window", xs=[40, 50, 60, 68, 74, 82, 90, 100, 120, 150], yk="p", ys=[0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8],
                  base=dict(smooth_days=3), pt=(74, 1.4)),
-    "期权PCR": dict(xk="short_ma", xs=[5, 8, 10, 15, 20, 25, 30], yk="long_ma", ys=[20, 30, 38, 50, 60, 90, 120],
-                base=dict(ma_kind="SMA", threshold=-0.025), pt=(10, 30)),
-    "融资融券": dict(xk="short_ma", xs=[5, 10, 15, 20, 25, 30, 40], yk="neutral_window", ys=[20, 30, 45, 60, 90, 120, 180],
+    "期权PCR": dict(xk="short_ma", xs=[3, 5, 8, 10, 12, 15, 20, 25], yk="long_ma", ys=[20, 25, 30, 38, 50, 70, 100],
+                base=dict(ma_kind="SMA", threshold=0.01), pt=(15, 30), gap=1.5),
+    "融资融券": dict(xk="short_ma", xs=[5, 8, 10, 12, 15, 20, 25, 30, 40], yk="neutral_window", ys=[20, 30, 45, 60, 90, 120, 180],
                  base=dict(), pt=(15, 30)),
-    "长端动量": dict(xk="lookback", xs=[80, 110, 130, 150, 180, 210, 250], yk="p", ys=[0.2, 0.3, 0.4, 0.5, 0.7, 0.9, 1.1],
+    "长端动量": dict(xk="lookback", xs=[80, 100, 110, 120, 130, 150, 170, 190, 210, 250], yk="p", ys=[0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.9, 1.1],
                  base=dict(amp_quantile=0.85), pt=(150, 0.4)),
-    "筹码结构": dict(xk="zscore_window", xs=[40, 80, 120, 185, 250, 375], yk="p", ys=[0.3, 0.5, 0.7, 1.0, 1.3],
+    "筹码结构": dict(xk="zscore_window", xs=[40, 60, 80, 120, 160, 185, 250, 300, 375], yk="p", ys=[0.3, 0.4, 0.5, 0.7, 1.0, 1.3],
                  base=dict(), pt=(120, 0.4)),
-    "筹码结构进阶": dict(xk="zscore_window", xs=[20, 40, 80, 120, 185, 250], yk="p", ys=[0.3, 0.5, 0.7, 1.0, 1.3],
+    "筹码结构进阶": dict(xk="zscore_window", xs=[20, 40, 60, 80, 120, 185, 250], yk="p", ys=[0.3, 0.4, 0.5, 0.7, 1.0, 1.3],
                    base=dict(), pt=(40, 0.5)),
 }
 
 
 @st.cache_data(show_spinner="扫描参数曲面（首次约10-30秒，之后缓存）……")
-def scan_surface(folder, filename, target, exec_mode, xk, xs, yk, ys, base_items):
-    """在 (xk×yk) 网格上扫年化%，返回 (xs, ys, Z[len(ys)][len(xs)])。confirm=1、当前执行口径、全区间。"""
+def scan_surface(folder, filename, target, exec_mode, xk, xs, yk, ys, base_items, gap=0.0, seg=None):
+    """在 (xk×yk) 网格上扫年化%，返回 (xs, ys, Z)。confirm=1、当前执行口径。
+    gap>0 且 xk=short_ma/yk=long_ma 时，long_ma<short_ma*gap 的无意义组合置空。
+    seg=None 全区间；('内')=2015-2020；('外')=2021-2025。"""
     mod = get_module(folder, filename)
     base = dict(base_items)
     idx_df = load_index(target)
+    s0, e0 = {None: (None, None), "内": ("2015-01-05", "2020-12-31"),
+              "外": ("2021-01-01", "2025-11-28")}[seg]
     Z = []
     for yv in ys:
         row = []
         for xv in xs:
             p = dict(base); p[xk] = xv; p[yk] = yv
-            if xk == "short_ma" and yk == "long_ma" and xv >= yv:
+            bad = (xk == "short_ma" and yk == "long_ma" and
+                   (xv >= yv or (gap and yv < xv * gap)))
+            if bad:
                 row.append(float("nan")); continue
             try:
                 sig = build_signal_for(mod, p, target)
-                m = run_backtest(idx_df, sig, confirm_weeks=1, exec_mode=exec_mode)["metrics"]
+                m = run_backtest(idx_df, sig, confirm_weeks=1, start=s0, end=e0, exec_mode=exec_mode)["metrics"]
                 row.append(round(m["年化收益率"] * 100, 2))
             except Exception:
                 row.append(float("nan"))
@@ -468,15 +475,11 @@ def render_strategy(folder, target, variant=None):
     # 「信号确认周数」旋钮已移除，且全局统一 confirm=1（覆盖各组 json 里可能残留的旧值，
     # 如融资曾存 confirm=2）；这样单策略页/汇总/组合三处口径一致，不去抖。
     confirm = 1
-    c_exec, c_date = st.columns([1, 2])
-    _EXECS = {"次周开盘执行（版本2默认）": "next_open", "收盘执行（研报口径）": "close"}
-    exec_label = c_exec.radio(
-        "执行口径（信号均于周五收盘确定）", list(_EXECS.keys()), horizontal=False, key=f"exec_{kpre}",
-        help="次周开盘=下周一开盘价成交(版本2默认，去除“用刚看到的收盘价成交”的乐观，无未来函数)；收盘=周五收盘价成交(研报口径，略乐观)。")
-    exec_mode = _EXECS[exec_label]
+    exec_mode = "next_open"                                # 版本2：统一次周开盘执行（信号周五收盘确定→下周开盘成交）
+    st.caption("🕒 执行口径：**次周开盘**（信号周五收盘确定 → 下周开盘成交，无未来函数）；均线/Zscore **严格满窗**。")
     dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
-    dr = c_date.slider("回测时间段（拖动做样本内/外测试）", min_value=dmin, max_value=dmax,
-                       value=(dmin, dmax), format="YYYY-MM-DD", key=f"date_{kpre}")
+    dr = st.slider("回测时间段（拖动做样本内/外测试）", min_value=dmin, max_value=dmax,
+                   value=(dmin, dmax), format="YYYY-MM-DD", key=f"date_{kpre}")
     start, end = str(dr[0]), str(dr[1])
 
     # ---------------- 保存当前参数 -> 已保存参数组（组1） ----------------
@@ -568,17 +571,35 @@ def render_strategy(folder, target, variant=None):
     st.markdown("**逐笔交易明细（当前参数，每改一次参数即刷新）**")
     st.dataframe(trades, use_container_width=True, hide_index=True)
 
-    # —— 参数曲面（3D：两个主参数 × 年化%，★=组1）——
+    # —— 当前参数的 样本内/外 体检（全 / 内 / 外 年化）——
+    st.markdown("---")
+    st.markdown("**🔬 样本内外检验（当前参数，次周开盘·严格满窗）**")
+    def _ann(s, e):
+        mm, *_ = compute(folder, tuple(sorted(params.items())), int(confirm), s, e, filename, target, exec_mode)
+        return mm.get("年化收益率")
+    a_full = _ann("2015-01-05", "2025-11-28")
+    a_is = _ann("2015-01-05", "2020-12-31")
+    a_oos = _ann("2021-01-01", "2025-11-28")
+    cc = st.columns(3)
+    cc[0].metric("全区间年化", f"{a_full*100:.2f}%")
+    cc[1].metric("样本内 2015-2020", f"{a_is*100:.2f}%")
+    cc[2].metric("样本外 2021-2025", f"{a_oos*100:.2f}%", delta=f"{(a_oos-a_is)*100:+.1f}pp vs内")
+    st.caption("流程：同一组参数在 2015-2020(样本内) 与 2021-2025(样本外) 各回测一次。"
+               "样本外≈样本内 = 稳健；样本外远低于样本内 = 过拟合。")
+
+    # —— 参数曲面（3D：两个主参数 × 年化%，★=组1，可切 全/内/外）——
     spec = SURF_SPEC.get(name) or SURF_SPEC.get(rkey)
     if spec:
         import plotly.graph_objects as go
-        st.markdown("---")
-        st.markdown(f"**📊 参数曲面（{spec['xk']} × {spec['yk']} → 年化%，当前执行口径·全区间，可拖动旋转）**")
+        st.markdown(f"**📊 参数曲面（{spec['xk']} × {spec['yk']} → 年化%，★=组1，可拖动旋转）**")
+        _SEG = {"全区间": None, "样本内(15-20)": "内", "样本外(21-25)": "外"}
+        seg_label = st.radio("曲面区间", list(_SEG.keys()), horizontal=True, key=f"surfseg_{kpre}")
         xs, ys, Z = scan_surface(folder, filename, target, exec_mode, spec["xk"],
                                  tuple(spec["xs"]), spec["yk"], tuple(spec["ys"]),
-                                 tuple(sorted(spec["base"].items())))
+                                 tuple(sorted(spec["base"].items())), gap=spec.get("gap", 0.0),
+                                 seg=_SEG[seg_label])
         fig3d = go.Figure(go.Surface(x=xs, y=ys, z=Z, colorscale="RdYlGn", cmin=-2, cmax=12,
-                                     colorbar=dict(title="年化%"), hovertemplate=(
+                                     colorbar=dict(title="年化%"), connectgaps=False, hovertemplate=(
                                          f"{spec['xk']}=%{{x}}<br>{spec['yk']}=%{{y}}<br>年化=%{{z}}%<extra></extra>")))
         px_, py_ = spec["pt"]                                  # 组1 点（★）
         try:
@@ -595,7 +616,8 @@ def render_strategy(folder, target, variant=None):
                                        camera=dict(eye=dict(x=1.6, y=-1.6, z=0.9))),
                             font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
         st.plotly_chart(fig3d, use_container_width=True)
-        st.caption("绿=年化高、红=低；★=你的组1。看★是否落在一片绿色高原(稳健)而非孤立尖峰(过拟合)。")
+        st.caption("绿=年化高、红=低；★=你的组1；空白=short_ma 与 long_ma 太接近的无意义组合(已剔除)。"
+                   "看★是否落在一片绿色高原(稳健)而非孤立尖峰(过拟合)；切到「样本外」看曲面是否整体塌下去。")
         note = SCAN_NOTES.get(name) or SCAN_NOTES.get(rkey)
         if note:
             with st.expander("文字结论（样本内/外 + 稳健版建议）"):
