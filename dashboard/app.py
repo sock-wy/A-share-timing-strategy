@@ -146,14 +146,22 @@ def compute_group1(folder, target=BENCH):
     return compute(folder, None, target=target, exec_mode="next_open")
 
 
+def _members_param_sig():
+    """所有组合成员当前「组1」参数的指纹。参数一变→指纹变→下面的组合缓存函数自动失效重算，
+    保证等权/赋权/多指数等下方分析用的都是你设置过的组1，而不是旧缓存或默认参数。"""
+    from src.composite import _group1_params
+    return tuple((folder, tuple(sorted((_group1_params(folder) or {}).items())))
+                 for _, folder in COMPOSITE_MEMBERS)
+
+
 @st.cache_data(show_spinner="计算组合信号（含动态赋权滚动优化）……")
-def cached_composite_signals():
+def cached_composite_signals(sig):                   # sig=组1参数指纹，让缓存随参数变化失效（勿加下划线，否则被忽略）
     from src.composite import composite_signals
     return composite_signals()                      # ({标签:综合信号}, 成员信号, 动态权重)
 
 
 @st.cache_data(show_spinner="计算动态赋权不同滚动窗口(60/90/120/180)……")
-def cached_window_compare():
+def cached_window_compare(sig):
     """等权 + 动态赋权(窗口 60/90/120/180) 在中证800 全区间的绩效与净值。
     赋权口径=按过去窗口的收益优化 min‖|R_t| − Σwᵢ·Sᵢ·R_t‖²。返回 {标签:{metrics,nav}}。"""
     from src.composite import member_signals, equal_signal, dynamic_weights
@@ -171,19 +179,19 @@ def cached_window_compare():
 
 
 @st.cache_data(show_spinner="计算子策略信号……")
-def cached_member_signals():
+def cached_member_signals(sig):
     from src.composite import member_signals
     return member_signals()
 
 
 @st.cache_data(show_spinner="计算子策略连续强度……")
-def cached_member_strengths():
+def cached_member_strengths(sig):
     from src.composite import member_strengths
     return member_strengths()
 
 
 @st.cache_data(show_spinner="计算组合在各主流指数上的表现（约1分钟，仅首次）……")
-def cached_multi_index():
+def cached_multi_index(sig):
     """动态赋权+等权两种组合、及买入持有基准，在 8 个主流指数上各跑一次。
     返回 {指数: {动态:{metrics,nav}, 等权:{metrics,nav}, 基准:{年化,回撤,nav}}}。"""
     from src.composite import run_composites
@@ -860,7 +868,7 @@ elif VIEW[0] == "correlation":
             f"**范围**：当前 {len(COMPOSITE_MEMBERS)} 个组合成员：{_mem}。预留接口：{_rsv}（08 缺数据）。\n\n"
             f"**研报原文（表12 结论）**：“{REPORT_CORR_TEXT}”")
 
-    member_sigs = cached_member_signals()
+    member_sigs = cached_member_signals(_members_param_sig())
 
     st.markdown("### ① 复现相关性（可选年份）")
     years = ["全区间"] + [str(y) for y in range(2015, 2026)]
@@ -922,7 +930,7 @@ elif VIEW[0] == "composite":
     st.caption(f"动态赋权组合 = {len(COMPOSITE_MEMBERS)} 个成员：{_mem}。预留接口：{_rsv}（08 缺数据）。"
                "各成员用「已保存参数组」在中证800 上出信号，再合成。")
 
-    comp_sigs, member_sigs, W = cached_composite_signals()
+    comp_sigs, member_sigs, W = cached_composite_signals(_members_param_sig())
     bench_df = load_index(BENCH)
     if block in ("1", "4", "5"):                         # 仅这些块保留时间轴
         dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
@@ -960,7 +968,7 @@ elif VIEW[0] == "composite":
         st.markdown("### 动态赋权 · 滚动窗口敏感性（60 / 90 / 120 / 180 日）")
         st.caption("赋权按**过去窗口的收益**优化（min‖|R_t| − Σwᵢ·Sᵢ·R_t‖²，非信号强度）；"
                    "下表为各窗口全区间绩效，含等权基准对照（不受上方时间轴影响）。")
-        wc = cached_window_compare()
+        wc = cached_window_compare(_members_param_sig())
         wrows = [{"方案": k, "年化": fmt("年化收益率", v["metrics"]["年化收益率"]),
                   "回撤": fmt("最大回撤", v["metrics"]["最大回撤"]),
                   "IR": fmt("年化IR", v["metrics"]["年化IR"]),
@@ -1061,7 +1069,7 @@ elif VIEW[0] == "composite":
                    "复现若在同位置着色，说明组合抓住了同样的大级别行情。")
 
     elif block == "5":
-        strengths = cached_member_strengths()
+        strengths = cached_member_strengths(_members_param_sig())
         _memnames = [n for n, _ in COMPOSITE_MEMBERS]
         dim_members = {}
         for _cat, _subs in CATEGORIES.items():
@@ -1101,7 +1109,7 @@ elif VIEW[0] == "composite":
         st.caption("动态赋权 / 等权 两种组合 + 买入持有基准，分别在 8 个主流指数上回测"
                    "（全市场信号相同、长端动量按各指数 OHLC 重算、动态权重对各指数收益重新优化）。"
                    "全区间口径（不受时间轴影响；首次约 25 秒）。")
-        mi = cached_multi_index()
+        mi = cached_multi_index(_members_param_sig())
         _icol = {"上证综指": "#4c78a8", "深证成指": "#b07aa1", "上证50": "#9ecae1", "沪深300": "#f2cf5b",
                  "中证500": "#9a9a9a", "中证800": "#59a14f", "中证1000": "#b0432e", "创业板指": "#f2b48c"}
         _names = list(mi.keys())
