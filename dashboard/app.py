@@ -106,13 +106,14 @@ def get_module(folder, filename="策略.py"):
 
 @st.cache_data(show_spinner=False)
 def compute(folder, params_items, confirm=1, start=None, end=None,
-            filename="策略.py", target=BENCH):
-    """跑一次回测（按标的）。params_items=None 用默认参数；否则用传入参数（元组化以便缓存）。"""
+            filename="策略.py", target=BENCH, exec_mode="close"):
+    """跑一次回测（按标的）。params_items=None 用默认参数；否则用传入参数（元组化以便缓存）。
+    exec_mode: 'close'(周五收盘成交,原口径) / 'next_open'(次周开盘成交,更真实)。"""
     mod = get_module(folder, filename)
     params = dict(params_items) if params_items else None
     signal = build_signal_for(mod, params, target)
     res = run_backtest(load_index(target), signal, name=mod.NAME,
-                       confirm_weeks=confirm, start=start, end=end)
+                       confirm_weeks=confirm, start=start, end=end, exec_mode=exec_mode)
     return res["metrics"], res["weekly"], res["trades"], mod.NAME, mod.REPORT_KEY
 
 
@@ -421,9 +422,15 @@ def render_strategy(folder, target, variant=None):
     # 「信号确认周数」旋钮已移除：统一沿用各组已存的 confirm_weeks（默认 1=不去抖）计算，
     # 不再在面板暴露；现有各组结果不变。
     confirm = int(g1.get("confirm_weeks", 1))
+    c_exec, c_date = st.columns([1, 2])
+    _EXECS = {"收盘执行（研报口径）": "close", "次周开盘执行（更真实）": "next_open"}
+    exec_label = c_exec.radio(
+        "执行口径（信号均于周五收盘确定）", list(_EXECS.keys()), horizontal=False, key=f"exec_{kpre}",
+        help="收盘=周五收盘价成交(可比研报，略乐观)；次周开盘=下周一开盘价成交(去除“用刚看到的收盘价成交”的乐观，无未来函数)。")
+    exec_mode = _EXECS[exec_label]
     dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
-    dr = st.slider("回测时间段（拖动做样本内/外测试）", min_value=dmin, max_value=dmax,
-                   value=(dmin, dmax), format="YYYY-MM-DD", key=f"date_{kpre}")
+    dr = c_date.slider("回测时间段（拖动做样本内/外测试）", min_value=dmin, max_value=dmax,
+                       value=(dmin, dmax), format="YYYY-MM-DD", key=f"date_{kpre}")
     start, end = str(dr[0]), str(dr[1])
 
     # ---------------- 保存当前参数 -> 已保存参数组（组1） ----------------
@@ -494,7 +501,7 @@ def render_strategy(folder, target, variant=None):
 
     # —— 回测（当前参数）——
     m, wk, trades, _, _ = compute(folder, tuple(sorted(params.items())), int(confirm),
-                                  start, end, filename, target)
+                                  start, end, filename, target, exec_mode)
     st.plotly_chart(nav_figure({"weekly": wk, "name": f"{name}（{target}·当前参数）"}),
                     use_container_width=True)
 
