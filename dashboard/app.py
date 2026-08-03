@@ -329,15 +329,15 @@ def _rng(a, b, s):
 SURF_SPEC = {
     "宏观流动性": dict(xk="zscore_window", xr=(3, 36, 1), yk="smooth_window", yr=(1, 9, 1),
                    base=dict(p=0.1), pt=(12, 3)),
-    "信贷预期": dict(xk="short_ma", xr=(5, 30, 1), yk="long_ma", yr=(90, 250, 5),
-                 base=dict(data_mode="插值", yoy_window=330, ma_kind="SMA", threshold=-0.002), pt=(15, 210), gap=3.0),
-    "中美汇率": dict(xk="short_ma", xr=(3, 30, 1), yk="long_ma", yr=(20, 120, 5),
+    "信贷预期": dict(xk="short_ma", xr=(4, 30, 2), yk="long_ma", yr=(90, 250, 10),
+                 base=dict(yoy_window=330, ma_kind="SMA", threshold=-0.002), pt=(15, 210), gap=3.0),
+    "中美汇率": dict(xk="short_ma", xr=(4, 30, 2), yk="long_ma", yr=(20, 60, 2),
                  base=dict(ma_kind="SMA", threshold=-0.01), pt=(20, 30), gap=1.5),
-    "中美利差": dict(xk="short_ma", xr=(3, 30, 1), yk="long_ma", yr=(40, 250, 10),
+    "中美利差": dict(xk="short_ma", xr=(4, 30, 2), yk="long_ma", yr=(40, 250, 10),
                  base=dict(ma_kind="SMA", threshold=-0.05), pt=(10, 80), gap=2.0),
     "期货基差": dict(xk="ma_window", xr=(40, 120, 2), yk="p", yr=(0.4, 1.8, 0.1),
                  base=dict(smooth_days=3), pt=(74, 1.4)),
-    "期权PCR": dict(xk="short_ma", xr=(3, 30, 1), yk="long_ma", yr=(20, 100, 5),
+    "期权PCR": dict(xk="short_ma", xr=(4, 30, 2), yk="long_ma", yr=(20, 60, 2),
                 base=dict(ma_kind="SMA", threshold=0.005), pt=(15, 30), gap=1.5),
     "融资融券": dict(xk="short_ma", xr=(5, 40, 2), yk="neutral_window", yr=(20, 180, 10),
                  base=dict(), pt=(15, 30)),
@@ -579,7 +579,7 @@ def render_strategy(folder, target, variant=None):
 
     # —— 当前参数的 样本内/外 体检（全 / 内 / 外 年化）——
     st.markdown("---")
-    st.markdown("**🔬 样本内外检验（当前参数，次周开盘·严格满窗）**")
+    st.markdown("**🔬 前段 vs 后段 年化（当前参数，次周开盘·严格满窗）**")
     def _ann(s, e):
         mm, *_ = compute(folder, tuple(sorted(params.items())), int(confirm), s, e, filename, target, exec_mode)
         return mm.get("年化收益率")
@@ -587,23 +587,27 @@ def render_strategy(folder, target, variant=None):
     a_is = _ann("2015-01-05", "2020-12-31")
     a_oos = _ann("2021-01-01", "2025-11-28")
     cc = st.columns(3)
-    cc[0].metric("全区间年化", f"{a_full*100:.2f}%")
-    cc[1].metric("样本内 2015-2020", f"{a_is*100:.2f}%")
-    cc[2].metric("样本外 2021-2025", f"{a_oos*100:.2f}%", delta=f"{(a_oos-a_is)*100:+.1f}pp vs内")
-    st.caption("流程：同一组参数在 2015-2020(样本内) 与 2021-2025(样本外) 各回测一次。"
-               "样本外≈样本内 = 稳健；样本外远低于样本内 = 过拟合。")
+    cc[0].metric("全区间 2015-2025", f"{a_full*100:.2f}%")
+    cc[1].metric("前段 2015-2020", f"{a_is*100:.2f}%")
+    cc[2].metric("后段 2021-2025", f"{a_oos*100:.2f}%", delta=f"{(a_oos-a_is)*100:+.1f}pp vs前段")
+    st.caption("同一组参数在 2015-2020(前段) 与 2021-2025(后段) 各回测一次："
+               "后段≈前段 = 参数可靠；后段远低于前段 = 只是拟合了历史(过拟合)。")
 
     # —— 参数曲面（3D：两个主参数 × 年化%，★=组1，◆=该区间最高，可切 全/内/外）——
     spec = SURF_SPEC.get(name) or SURF_SPEC.get(rkey)
     if spec:
         import plotly.graph_objects as go
         st.markdown(f"**📊 参数曲面（{spec['xk']} × {spec['yk']} → 年化%，★=组1，◆=最高，可拖动旋转）**")
-        _SEG = {"全区间": None, "样本内(15-20)": "内", "样本外(21-25)": "外"}
+        _SEG = {"全区间 15-25": None, "2015-2020": "内", "2021-2025": "外"}
         _SEGDATES = {None: ("2015-01-05", "2025-11-28"), "内": ("2015-01-05", "2020-12-31"),
                      "外": ("2021-01-01", "2025-11-28")}
         seg_label = st.radio("曲面区间", list(_SEG.keys()), horizontal=True, key=f"surfseg_{kpre}")
         s0, e0 = _SEGDATES[_SEG[seg_label]]
         xsr, ysr = _rng(*spec["xr"]), _rng(*spec["yr"])
+        if spec["pt"][0] not in xsr:                          # 保证组1点一定在网格上
+            xsr = sorted(set(xsr + [spec["pt"][0]]))
+        if spec["pt"][1] not in ysr:
+            ysr = sorted(set(ysr + [spec["pt"][1]]))
         xs, ys, Z = scan_surface(folder, filename, target, exec_mode, spec["xk"],
                                  tuple(xsr), spec["yk"], tuple(ysr),
                                  tuple(sorted(spec["base"].items())), gap=spec.get("gap", 0.0),
@@ -637,7 +641,7 @@ def render_strategy(folder, target, variant=None):
                             font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
         st.plotly_chart(fig3d, use_container_width=True)
         st.caption("绿=年化高、红=低；**★青=你的组1，◆金=该区间年化最高的那组**；"
-                   "空白=short_ma 与 long_ma 太接近的无意义组合(已剔除)。切「样本外」看曲面是否整体塌下去。")
+                   "空白=short_ma 与 long_ma 太接近的无意义组合(已剔除)。切到「2021-2025」看曲面是否整体塌下去。")
 
         # —— 组1 vs 本区间最高：绩效对比表 ——
         def _pt_metrics(vx, vy):
