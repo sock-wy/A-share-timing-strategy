@@ -599,7 +599,10 @@ def render_strategy(folder, target, variant=None):
         import plotly.graph_objects as go
         st.markdown(f"**📊 参数曲面（{spec['xk']} × {spec['yk']} → 年化%，★=组1，◆=最高，可拖动旋转）**")
         _SEG = {"全区间": None, "样本内(15-20)": "内", "样本外(21-25)": "外"}
+        _SEGDATES = {None: ("2015-01-05", "2025-11-28"), "内": ("2015-01-05", "2020-12-31"),
+                     "外": ("2021-01-01", "2025-11-28")}
         seg_label = st.radio("曲面区间", list(_SEG.keys()), horizontal=True, key=f"surfseg_{kpre}")
+        s0, e0 = _SEGDATES[_SEG[seg_label]]
         xsr, ysr = _rng(*spec["xr"]), _rng(*spec["yr"])
         xs, ys, Z = scan_surface(folder, filename, target, exec_mode, spec["xk"],
                                  tuple(xsr), spec["yk"], tuple(ysr),
@@ -619,9 +622,11 @@ def render_strategy(folder, target, variant=None):
                 x=[px_], y=[py_], z=[zpt + 0.5], mode="markers+text", text=["组1"],
                 textposition="top center", marker=dict(size=6, color="cyan", symbol="diamond"),
                 hovertemplate=f"组1 {spec['xk']}={px_},{spec['yk']}={py_}<br>年化={zpt}%<extra></extra>"))
+        best = None
         if np.isfinite(Za).any():                              # 该区间最高点（◆ 金色）
             iy, ix = np.unravel_index(np.nanargmax(Za), Za.shape)
             bx, by, bz = xs[ix], ys[iy], float(Za[iy, ix])
+            best = (bx, by, bz)
             fig3d.add_trace(go.Scatter3d(
                 x=[bx], y=[by], z=[bz + 0.5], mode="markers+text", text=[f"最高 {bz:.1f}%"],
                 textposition="bottom center", marker=dict(size=7, color="gold", symbol="diamond"),
@@ -632,8 +637,27 @@ def render_strategy(folder, target, variant=None):
                             font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
         st.plotly_chart(fig3d, use_container_width=True)
         st.caption("绿=年化高、红=低；**★青=你的组1，◆金=该区间年化最高的那组**；"
-                   "空白=short_ma 与 long_ma 太接近的无意义组合(已剔除)。"
-                   "★落在绿色高原=稳健、孤立尖峰=过拟合；切「样本外」看曲面是否整体塌下去。")
+                   "空白=short_ma 与 long_ma 太接近的无意义组合(已剔除)。切「样本外」看曲面是否整体塌下去。")
+
+        # —— 组1 vs 本区间最高：绩效对比表 ——
+        def _pt_metrics(vx, vy):
+            pp = dict(spec["base"]); pp[spec["xk"]] = vx; pp[spec["yk"]] = vy
+            mm, *_ = compute(folder, tuple(sorted(pp.items())), int(confirm), s0, e0, filename, target, exec_mode)
+            return mm
+        cmp_rows = []
+        m1 = _pt_metrics(px_, py_)
+        cmp_rows.append({"": "★ 你的组1", f"{spec['xk']}": px_, f"{spec['yk']}": py_,
+                         "年化": fmt("年化收益率", m1.get("年化收益率")), "最大回撤": fmt("最大回撤", m1.get("最大回撤")),
+                         "IR": fmt("年化IR", m1.get("年化IR")), "次数": fmt("信号次数", m1.get("信号次数")),
+                         "次胜率": fmt("信号次胜率", m1.get("信号次胜率"))})
+        if best:
+            mb = _pt_metrics(best[0], best[1])
+            cmp_rows.append({"": "◆ 本区间最高", f"{spec['xk']}": best[0], f"{spec['yk']}": best[1],
+                             "年化": fmt("年化收益率", mb.get("年化收益率")), "最大回撤": fmt("最大回撤", mb.get("最大回撤")),
+                             "IR": fmt("年化IR", mb.get("年化IR")), "次数": fmt("信号次数", mb.get("信号次数")),
+                             "次胜率": fmt("信号次胜率", mb.get("信号次胜率"))})
+        st.markdown(f"**🏆 组1 vs 本区间最高（{seg_label}，其余参数固定为组1值）**")
+        st.dataframe(pd.DataFrame(cmp_rows), use_container_width=True, hide_index=True)
 
 
 
