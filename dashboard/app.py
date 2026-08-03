@@ -316,7 +316,7 @@ if st.sidebar.button("🔗 子策略相关性（中证800）", use_container_wid
 
 
 # 额外参数槽（组2）：仅这些子策略开放；组合/全策略汇总始终只用组1，组2 仅备用不影响。
-EXTRA_SLOT_FOLDERS = {"05_期货基差"}
+EXTRA_SLOT_FOLDERS = {"05_期货基差", "01_宏观流动性"}
 
 # 需要“前段/后段过拟合测试”的策略：自由度高/信号弱/易出尖峰，能凭空拟合出漂亮曲线。
 # 其余（经济驱动、方向由逻辑锁定、可调参数少）几乎无过拟合空间，只看曲面是否平台即可。
@@ -586,7 +586,7 @@ def render_strategy(folder, target, variant=None):
     _r = wk["strat_ret"].fillna(0); _rm = wk["ret"].fillna(0)
     if len(_r) > 20 and _rm.std() > 0:
         _b, _a = np.polyfit(_rm.values, _r.values, 1)          # r = a + b·r_market
-        _aann = (1 + _a) ** BACKTEST["weeks_per_year"] - 1
+        _aann = (1 + _a) ** 52 - 1                              # 周alpha年化（52周/年）
         _corr = _r.corr(_rm); _expo = (wk["position"] > 0).mean()
         st.markdown("**🎯 择时价值分解（对大盘回归）**")
         ac = st.columns(4)
