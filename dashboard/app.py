@@ -316,7 +316,7 @@ if st.sidebar.button("🔗 子策略相关性（中证800）", use_container_wid
 
 
 # 额外参数槽（组2）：仅这些子策略开放；组合/全策略汇总始终只用组1，组2 仅备用不影响。
-EXTRA_SLOT_FOLDERS = {"05_期货基差", "01_宏观流动性"}
+EXTRA_SLOT_FOLDERS = {"01_宏观流动性", "02_信贷预期"}
 
 # 需要“前段/后段过拟合测试”的策略：自由度高/信号弱/易出尖峰，能凭空拟合出漂亮曲线。
 # 其余（经济驱动、方向由逻辑锁定、可调参数少）几乎无过拟合空间，只看曲面是否平台即可。
@@ -339,14 +339,14 @@ SURF_SPEC = {
                  base=dict(ma_kind="SMA", threshold=-0.01), pt=(20, 30), gap=1.5),
     "中美利差": dict(xk="short_ma", xr=(4, 30, 2), yk="long_ma", yr=(40, 250, 10),
                  base=dict(ma_kind="SMA", threshold=-0.05), pt=(10, 80), gap=2.0),
-    "期货基差": dict(xk="ma_window", xr=(40, 120, 2), yk="p", yr=(0.4, 1.8, 0.1),
-                 base=dict(smooth_days=3), pt=(74, 1.4)),
-    "期权PCR": dict(xk="short_ma", xr=(4, 30, 2), yk="long_ma", yr=(20, 60, 2),
-                base=dict(ma_kind="SMA", threshold=0.005), pt=(15, 30), gap=1.5),
-    "融资融券": dict(xk="short_ma", xr=(5, 40, 2), yk="neutral_window", yr=(20, 180, 10),
-                 base=dict(), pt=(15, 30)),
-    "长端动量": dict(xk="lookback", xr=(90, 250, 15), yk="p", yr=(0.2, 1.1, 0.1),
-                 base=dict(amp_quantile=0.85), pt=(150, 0.4)),   # 指标计算较慢，步长适度
+    "期货基差": dict(xk="ma_window", xr=(60, 90, 1), yk="p", yr=(1.0, 1.8, 0.05),
+                 base=dict(smooth_days=3), pt=(74, 1.4)),        # 围绕组1 74/1.4 收窄细扫，看高原
+    "期权PCR": dict(xk="short_ma", xr=(8, 24, 1), yk="long_ma", yr=(20, 44, 1),
+                base=dict(ma_kind="SMA", threshold=0.005), pt=(15, 30), gap=1.5),  # 围绕 15/30
+    "融资融券": dict(xk="short_ma", xr=(8, 24, 1), yk="neutral_window", yr=(15, 50, 2),
+                 base=dict(), pt=(15, 30)),                      # 围绕组1 15/30 收窄细扫
+    "长端动量": dict(xk="lookback", xr=(110, 200, 5), yk="p", yr=(0.2, 0.7, 0.05),
+                 base=dict(amp_quantile=0.85), pt=(150, 0.4)),   # 围绕 150/0.4；lookback 指标重算慢，步长留5
     "筹码结构": dict(xk="zscore_window", xr=(40, 360, 40), yk="p", yr=(0.4, 1.2, 0.2),
                  base=dict(), pt=(120, 0.4)),                    # 筹码分布重算慢，网格从简
     "筹码结构进阶": dict(xk="zscore_window", xr=(40, 280, 40), yk="p", yr=(0.4, 1.4, 0.2),
@@ -627,17 +627,29 @@ def render_strategy(folder, target, variant=None):
     spec = SURF_SPEC.get(name) or SURF_SPEC.get(rkey)
     if spec:
         import plotly.graph_objects as go
-        st.markdown(f"**📊 参数曲面（{spec['xk']} × {spec['yk']} → 年化%，★=组1，◆=最高，可拖动旋转）**")
+        _has_g2 = folder in EXTRA_SLOT_FOLDERS
+        st.markdown(f"**📊 参数曲面（{spec['xk']} × {spec['yk']} → 年化%，青=组1，金=最高"
+                    + ("，紫=组2" if _has_g2 else "") + "，可拖动旋转）**")
         _SEG = {"全区间 15-25": None, "2015-2020": "内", "2021-2025": "外"}
         _SEGDATES = {None: ("2015-01-05", "2025-11-28"), "内": ("2015-01-05", "2020-12-31"),
                      "外": ("2021-01-01", "2025-11-28")}
         seg_label = st.radio("曲面区间", list(_SEG.keys()), horizontal=True, key=f"surfseg_{kpre}")
         s0, e0 = _SEGDATES[_SEG[seg_label]]
+        # 组1点=你当前实际组1(读g1/json)；组2点=已保存的组2(仅有组2槽的策略)。二者都随你改参数移动。
+        def _axpt(d):
+            if not d:
+                return None
+            vx, vy = d.get(spec["xk"]), d.get(spec["yk"])
+            return (vx, vy) if (vx is not None and vy is not None) else None
+        pt1 = _axpt(g1) or spec["pt"]
+        pt2 = _axpt(groups.get("组2")) if folder in EXTRA_SLOT_FOLDERS else None
         xsr, ysr = _rng(*spec["xr"]), _rng(*spec["yr"])
-        if spec["pt"][0] not in xsr:                          # 保证组1点一定在网格上
-            xsr = sorted(set(xsr + [spec["pt"][0]]))
-        if spec["pt"][1] not in ysr:
-            ysr = sorted(set(ysr + [spec["pt"][1]]))
+        for _p in (pt1, pt2):                                 # 保证组1/组2点一定落在网格上
+            if _p:
+                if _p[0] not in xsr:
+                    xsr = sorted(set(xsr + [_p[0]]))
+                if _p[1] not in ysr:
+                    ysr = sorted(set(ysr + [_p[1]]))
         xs, ys, Z = scan_surface(folder, filename, target, exec_mode, spec["xk"],
                                  tuple(xsr), spec["yk"], tuple(ysr),
                                  tuple(sorted(spec["base"].items())), gap=spec.get("gap", 0.0),
@@ -646,16 +658,23 @@ def render_strategy(folder, target, variant=None):
         fig3d = go.Figure(go.Surface(x=xs, y=ys, z=Z, colorscale="RdYlGn", cmin=-2, cmax=12,
                                      colorbar=dict(title="年化%"), connectgaps=False, hovertemplate=(
                                          f"{spec['xk']}=%{{x}}<br>{spec['yk']}=%{{y}}<br>年化=%{{z}}%<extra></extra>")))
-        px_, py_ = spec["pt"]                                  # 组1 点（★ 青色）
-        try:
-            zpt = Z[ys.index(py_)][xs.index(px_)]
-        except ValueError:
-            zpt = None
-        if zpt is not None and zpt == zpt:
+        px_, py_ = pt1                                         # 组1 点（青色，读你的实际组1）
+        def _add_mark(pxy, label, color, dz):
+            if not pxy:
+                return
+            mx, my = pxy
+            try:
+                mz = Z[ys.index(my)][xs.index(mx)]
+            except ValueError:
+                return
+            if mz is None or mz != mz:
+                return
             fig3d.add_trace(go.Scatter3d(
-                x=[px_], y=[py_], z=[zpt + 0.5], mode="markers+text", text=["组1"],
-                textposition="top center", marker=dict(size=6, color="cyan", symbol="diamond"),
-                hovertemplate=f"组1 {spec['xk']}={px_},{spec['yk']}={py_}<br>年化={zpt}%<extra></extra>"))
+                x=[mx], y=[my], z=[mz + dz], mode="markers+text", text=[label],
+                textposition="top center", marker=dict(size=6, color=color, symbol="diamond"),
+                hovertemplate=f"{label} {spec['xk']}={mx},{spec['yk']}={my}<br>年化={mz}%<extra></extra>"))
+        _add_mark(pt1, "组1", "cyan", 0.5)
+        _add_mark(pt2, "组2", "magenta", 1.0)                  # 组2：紫，随你保存的组2参数移动
         best = None
         if np.isfinite(Za).any():                              # 该区间最高点（◆ 金色）
             iy, ix = np.unravel_index(np.nanargmax(Za), Za.shape)
@@ -670,8 +689,9 @@ def render_strategy(folder, target, variant=None):
                                        camera=dict(eye=dict(x=1.6, y=-1.6, z=0.9))),
                             font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
         st.plotly_chart(fig3d, use_container_width=True)
-        st.caption("绿=年化高、红=低；**★青=你的组1，◆金=该区间年化最高的那组**；"
-                   "空白=short_ma 与 long_ma 太接近的无意义组合(已剔除)。切到「2021-2025」看曲面是否整体塌下去。")
+        st.caption("绿=年化高、红=低；**青=你的组1，金=该区间年化最高的那组**"
+                   + ("，**紫=组2（随你保存的组2参数移动，仅供对比，不进组合）**" if _has_g2 else "")
+                   + "；空白=无意义组合(已剔除)。切到「2021-2025」看曲面是否整体塌下去。")
 
         # —— 组1 vs 本区间最高：绩效对比表 ——
         def _pt_metrics(vx, vy):
@@ -690,6 +710,12 @@ def render_strategy(folder, target, variant=None):
                              "年化": fmt("年化收益率", mb.get("年化收益率")), "最大回撤": fmt("最大回撤", mb.get("最大回撤")),
                              "IR": fmt("年化IR", mb.get("年化IR")), "次数": fmt("信号次数", mb.get("信号次数")),
                              "次胜率": fmt("信号次胜率", mb.get("信号次胜率"))})
+        if pt2:
+            m2 = _pt_metrics(pt2[0], pt2[1])
+            cmp_rows.append({"": "🟪 你的组2", f"{spec['xk']}": pt2[0], f"{spec['yk']}": pt2[1],
+                             "年化": fmt("年化收益率", m2.get("年化收益率")), "最大回撤": fmt("最大回撤", m2.get("最大回撤")),
+                             "IR": fmt("年化IR", m2.get("年化IR")), "次数": fmt("信号次数", m2.get("信号次数")),
+                             "次胜率": fmt("信号次胜率", m2.get("信号次胜率"))})
         st.markdown(f"**🏆 组1 vs 本区间最高（{seg_label}，其余参数固定为组1值）**")
         st.dataframe(pd.DataFrame(cmp_rows), use_container_width=True, hide_index=True)
 
