@@ -325,6 +325,19 @@ if st.sidebar.button("🔗 子策略相关性（中证800）", use_container_wid
 # 额外参数槽（组2）：仅这些子策略开放；组合/全策略汇总始终只用组1，组2 仅备用不影响。
 EXTRA_SLOT_FOLDERS = set()   # 组2 已全部取消（组合/汇总本就只用组1）
 
+# 「最相似研报」参数：综合 年化+回撤+总持仓/次数 对研报做的匹配结果（2015-2025、中证800）。
+# 仅当它与你当前参数不同才在绩效表里多显示一列；中美利差按你的意见沿用现值(不放推荐)。
+REPORT_MATCH_PARAMS = {
+    "宏观流动性": dict(smooth_window=2, zscore_window=12, p=0.5),
+    "信贷预期": dict(yoy_window=360, short_ma=20, long_ma=240, ma_kind="SMA", threshold=-0.002),
+    "中美汇率": dict(short_ma=10, long_ma=30, ma_kind="EMA", threshold=-0.01),
+    "期权PCR": dict(short_ma=10, long_ma=40, ma_kind="SMA", threshold=-0.03),
+    "融资融券": dict(neutral_window=30, short_ma=20),
+    "长端动量": dict(lookback=110, amp_quantile=0.85, p=0.4),
+    # 期货基差：ma74/p1.4 已是最贴研报(年化9.09/回撤26)，与现值一致→不另列；小 ma_window 频率对但年化崩溃。
+    # 中美利差：按你的意见沿用现值，不放推荐。
+}
+
 # 需要“前段/后段过拟合测试”的策略：自由度高/信号弱/易出尖峰，能凭空拟合出漂亮曲线。
 # 其余（经济驱动、方向由逻辑锁定、可调参数少）几乎无过拟合空间，只看曲面是否平台即可。
 HIGH_DOF_STRATEGIES = {"筹码结构", "筹码结构进阶", "长端动量", "期货基差"}
@@ -597,12 +610,25 @@ def render_strategy(folder, target, variant=None):
                               "2015-01-05", "2025-11-28", filename, target, exec_mode)
             tbl["本区间最高"] = [fmt(k, _bm.get(k)) for k in METRIC_ORDER]
             best_info = (_spec["xk"], _xs[_ix], _spec["yk"], _ys[_iy])
-    st.dataframe(tbl, use_container_width=True, hide_index=True)
+    # 最相似研报：固定的研报匹配参数（仅基准、且与当前参数不同才显示）
+    rec = REPORT_MATCH_PARAMS.get(name) if is_bench else None
+    rec_info = None
+    if rec and not all(params.get(k) == v for k, v in rec.items()):
+        _rm, *_ = compute(folder, tuple(sorted(rec.items())), int(confirm),
+                          "2015-01-05", "2025-11-28", filename, target, exec_mode)
+        tbl["最相似研报"] = [fmt(k, _rm.get(k)) for k in METRIC_ORDER]
+        rec_info = "、".join(f"{k}={v}" for k, v in rec.items())
+    # 复现 + 研报 两列浅蓝底（深蓝字，暗色主题也可读）
+    sty = tbl.style.set_properties(subset=["复现", rep_col],
+                                   **{"background-color": "#dbeafc", "color": "#0b3d66"})
+    st.dataframe(sty, use_container_width=True, hide_index=True)
     _cap = ("研报列为全区间数值；拖动上方时间段只改变「复现」列。" if is_bench else
             f"⚠ 研报只做了中证800，此列仅作参考量级；{target} 的“基准”应看净值图中的 {target} 买入持有。")
     if best_info:
         _cap += (f"　「本区间最高」= 全 2015-2025 内年化最高的一组"
                  f"（{best_info[0]}={best_info[1]}、{best_info[2]}={best_info[3]}，其余参数=你当前值），亦为全区间参考。")
+    if rec_info:
+        _cap += f"　「最相似研报」= 综合年化/回撤/持仓对研报最贴的一组（{rec_info}）。"
     _cap += ("　进阶版仍与研报“" + rkey + "”原始绩效对照。" if is_advanced else "")
     st.caption(_cap)
 
