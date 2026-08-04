@@ -268,7 +268,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("A股权益择时 · 多策略回测面板")
 st.caption("开源证券《权益择时的多策略框架：从宏观驱动到微观验证》复现 · 6维度10子策略 + 组合合成")
 
 # ---------------- 侧边栏导航：标的目录 + 六大维度手风琴 ----------------
@@ -324,7 +323,7 @@ if st.sidebar.button("🔗 子策略相关性（中证800）", use_container_wid
 
 
 # 额外参数槽（组2）：仅这些子策略开放；组合/全策略汇总始终只用组1，组2 仅备用不影响。
-EXTRA_SLOT_FOLDERS = {"01_宏观流动性", "02_信贷预期"}
+EXTRA_SLOT_FOLDERS = set()   # 组2 已全部取消（组合/汇总本就只用组1）
 
 # 需要“前段/后段过拟合测试”的策略：自由度高/信号弱/易出尖峰，能凭空拟合出漂亮曲线。
 # 其余（经济驱动、方向由逻辑锁定、可调参数少）几乎无过拟合空间，只看曲面是否平台即可。
@@ -436,7 +435,6 @@ def render_strategy(folder, target, variant=None):
         _load_slot_into_state(saved, kpre, space)
         st.rerun()
     save_clicked = bc[1].button("💾 保存当前参数", key=f"savecur_{kpre}", use_container_width=True)
-    bc[2].caption("「已保存参数组」= 我的参数组.json 的组1（全策略汇总/组合用它）；保存 = 用当前参数覆盖。")
 
     # ---------------- 额外参数槽（组2）：仅指定子策略；组1 仍是组合/汇总唯一默认 ----------------
     extra_saves = {}
@@ -494,7 +492,6 @@ def render_strategy(folder, target, variant=None):
     # 如融资曾存 confirm=2）；这样单策略页/汇总/组合三处口径一致，不去抖。
     confirm = 1
     exec_mode = "next_open"                                # 版本2：统一次周开盘执行（信号周五收盘确定→下周开盘成交）
-    st.caption("🕒 执行口径：**次周开盘**（信号周五收盘确定 → 下周开盘成交，无未来函数）；均线/Zscore **严格满窗**。")
     dmin, dmax = datetime.date(2015, 1, 5), datetime.date(2025, 11, 28)
     dr = st.slider("回测时间段（拖动做样本内/外测试）", min_value=dmin, max_value=dmax,
                    value=(dmin, dmax), format="YYYY-MM-DD", key=f"date_{kpre}")
@@ -580,38 +577,40 @@ def render_strategy(folder, target, variant=None):
         "复现": [fmt(k, m.get(k)) for k in METRIC_ORDER],
         rep_col: [fmt(k, rep.get(k)) for k in METRIC_ORDER],
     })
+    # 本区间最高：全 2015-2025、其余参数=你当前值时，年化最高的那组绩效（与研报列同为全区间参考）
+    best_info = None
+    _spec = SURF_SPEC.get(name) or SURF_SPEC.get(rkey)
+    if _spec:
+        _bd = {k: v for k, v in params.items() if k not in (_spec["xk"], _spec["yk"], "confirm_weeks")}
+        _pt = (params.get(_spec["xk"], _spec["pt"][0]), params.get(_spec["yk"], _spec["pt"][1]))
+        _xsr, _ysr = _rng(*_spec["xr"]), _rng(*_spec["yr"])
+        if _pt[0] not in _xsr: _xsr = sorted(set(_xsr + [_pt[0]]))   # 与曲面同网格→共用缓存
+        if _pt[1] not in _ysr: _ysr = sorted(set(_ysr + [_pt[1]]))
+        _xs, _ys, _Z = scan_surface(folder, filename, target, exec_mode, _spec["xk"], tuple(_xsr),
+                                    _spec["yk"], tuple(_ysr), tuple(sorted(_bd.items())),
+                                    gap=_spec.get("gap", 0.0), seg=None)
+        _Za = np.array(_Z, dtype=float)
+        if np.isfinite(_Za).any():
+            _iy, _ix = np.unravel_index(np.nanargmax(_Za), _Za.shape)
+            _bp = dict(_bd); _bp[_spec["xk"]] = _xs[_ix]; _bp[_spec["yk"]] = _ys[_iy]
+            _bm, *_ = compute(folder, tuple(sorted(_bp.items())), int(confirm),
+                              "2015-01-05", "2025-11-28", filename, target, exec_mode)
+            tbl["本区间最高"] = [fmt(k, _bm.get(k)) for k in METRIC_ORDER]
+            best_info = (_spec["xk"], _xs[_ix], _spec["yk"], _ys[_iy])
     st.dataframe(tbl, use_container_width=True, hide_index=True)
-    st.caption(("研报列为全区间数值；拖动上方时间段只改变「复现」列。" if is_bench else
-                f"⚠ 研报只做了中证800，此列仅作参考量级；{target} 的“基准”应看净值图中的 {target} 买入持有。")
-               + ("　进阶版仍与研报“" + rkey + "”原始绩效对照。" if is_advanced else ""))
+    _cap = ("研报列为全区间数值；拖动上方时间段只改变「复现」列。" if is_bench else
+            f"⚠ 研报只做了中证800，此列仅作参考量级；{target} 的“基准”应看净值图中的 {target} 买入持有。")
+    if best_info:
+        _cap += (f"　「本区间最高」= 全 2015-2025 内年化最高的一组"
+                 f"（{best_info[0]}={best_info[1]}、{best_info[2]}={best_info[3]}，其余参数=你当前值），亦为全区间参考。")
+    _cap += ("　进阶版仍与研报“" + rkey + "”原始绩效对照。" if is_advanced else "")
+    st.caption(_cap)
 
     # —— 逐笔交易明细 ——
     st.markdown("**逐笔交易明细（当前参数，每改一次参数即刷新）**")
     st.dataframe(trades, use_container_width=True, hide_index=True)
 
-    # —— 择时价值：α/β 分解 + 分年度 vs 大盘（复用 wk，不额外回测）——
     st.markdown("---")
-    _r = wk["strat_ret"].fillna(0); _rm = wk["ret"].fillna(0)
-    if len(_r) > 20 and _rm.std() > 0:
-        _b, _a = np.polyfit(_rm.values, _r.values, 1)          # r = a + b·r_market
-        _aann = (1 + _a) ** 52 - 1                              # 周alpha年化（52周/年）
-        _corr = _r.corr(_rm); _expo = (wk["position"] > 0).mean()
-        st.markdown("**🎯 择时价值分解（对大盘回归）**")
-        ac = st.columns(4)
-        ac[0].metric("年化α（择时超额）", f"{_aann*100:.2f}%")
-        ac[1].metric("β（对大盘）", f"{_b:.2f}")
-        ac[2].metric("与大盘相关性", f"{_corr:.2f}")
-        ac[3].metric("平均市场敞口", f"{_expo*100:.0f}%")
-        st.caption("α>0 且 β/相关性低 = 收益主要来自**择时**（避开回撤、抓趋势），不是躺赢大盘beta；"
-                   "α≈0、β≈1 才是纯beta。这类信号本质是‘择时/趋势’风格，不是选股alpha。")
-        _sy = (1 + _r).groupby(_r.index.year).prod() - 1
-        _my = (1 + _rm).groupby(_rm.index.year).prod() - 1
-        _yt = pd.DataFrame({"年份": _sy.index.astype(int),
-                            "策略": [fmt("年化收益率", v) for v in _sy.values],
-                            "中证800": [fmt("年化收益率", v) for v in _my.values],
-                            "超额": [fmt("年化收益率", s - m) for s, m in zip(_sy.values, _my.values)]})
-        with st.expander("分年度：策略 vs 大盘（看熊市防守 / 趋势参与，趋势策略按年波动是常态）"):
-            st.dataframe(_yt, use_container_width=True, hide_index=True)
 
     # —— 过拟合测试：仅高自由度策略才需要（并说清为什么）——
     is_high_dof = (name in HIGH_DOF_STRATEGIES) or (rkey in HIGH_DOF_STRATEGIES)
@@ -714,32 +713,7 @@ def render_strategy(folder, target, variant=None):
                    + ("，**紫=组2（随你保存的组2参数移动，仅供对比，不进组合）**" if _has_g2 else "")
                    + "；空白=无意义组合(已剔除)。切到「2021-2025」看曲面是否整体塌下去。")
 
-        # —— 组1 vs 本区间最高：绩效对比表 ——
-        def _pt_metrics(vx, vy):                               # 组1/最高：其余参数=组1(base_dyn)，与曲面一致
-            pp = dict(base_dyn); pp[spec["xk"]] = vx; pp[spec["yk"]] = vy
-            mm, *_ = compute(folder, tuple(sorted(pp.items())), int(confirm), s0, e0, filename, target, exec_mode)
-            return mm
-        cmp_rows = []
-        m1 = _pt_metrics(px_, py_)
-        cmp_rows.append({"": "★ 你的组1", f"{spec['xk']}": px_, f"{spec['yk']}": py_,
-                         "年化": fmt("年化收益率", m1.get("年化收益率")), "最大回撤": fmt("最大回撤", m1.get("最大回撤")),
-                         "IR": fmt("年化IR", m1.get("年化IR")), "次数": fmt("信号次数", m1.get("信号次数")),
-                         "次胜率": fmt("信号次胜率", m1.get("信号次胜率"))})
-        if best:
-            mb = _pt_metrics(best[0], best[1])
-            cmp_rows.append({"": "◆ 本区间最高", f"{spec['xk']}": best[0], f"{spec['yk']}": best[1],
-                             "年化": fmt("年化收益率", mb.get("年化收益率")), "最大回撤": fmt("最大回撤", mb.get("最大回撤")),
-                             "IR": fmt("年化IR", mb.get("年化IR")), "次数": fmt("信号次数", mb.get("信号次数")),
-                             "次胜率": fmt("信号次胜率", mb.get("信号次胜率"))})
-        if g2 and pt2:                                         # 组2：用它自己整套参数（可能与组1的非轴参数不同）
-            _pp2 = {k: v for k, v in g2.items() if k != "confirm_weeks"}
-            m2, *_ = compute(folder, tuple(sorted(_pp2.items())), int(confirm), s0, e0, filename, target, exec_mode)
-            cmp_rows.append({"": "🟪 你的组2", f"{spec['xk']}": pt2[0], f"{spec['yk']}": pt2[1],
-                             "年化": fmt("年化收益率", m2.get("年化收益率")), "最大回撤": fmt("最大回撤", m2.get("最大回撤")),
-                             "IR": fmt("年化IR", m2.get("年化IR")), "次数": fmt("信号次数", m2.get("信号次数")),
-                             "次胜率": fmt("信号次胜率", m2.get("信号次胜率"))})
-        st.markdown(f"**🏆 组1 vs 本区间最高（{seg_label}，其余参数=你当前组1值）**")
-        st.dataframe(pd.DataFrame(cmp_rows), use_container_width=True, hide_index=True)
+        # （组1 vs 本区间最高 的对比已上移到顶部「绩效指标」表的「本区间最高」列，此处不再重复表格）
 
 
 
