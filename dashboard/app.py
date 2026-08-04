@@ -709,9 +709,6 @@ def render_strategy(folder, target, variant=None):
                                        camera=dict(eye=dict(x=1.6, y=-1.6, z=0.9))),
                             font=dict(family="PingFang SC, Microsoft YaHei, sans-serif"))
         st.plotly_chart(fig3d, use_container_width=True)
-        st.caption("绿=年化高、红=低；**青=你的组1，金=该区间年化最高的那组**"
-                   + ("，**紫=组2（随你保存的组2参数移动，仅供对比，不进组合）**" if _has_g2 else "")
-                   + "；空白=无意义组合(已剔除)。切到「2021-2025」看曲面是否整体塌下去。")
 
         # （组1 vs 本区间最高 的对比已上移到顶部「绩效指标」表的「本区间最高」列，此处不再重复表格）
 
