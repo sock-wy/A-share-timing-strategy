@@ -357,8 +357,8 @@ SURF_SPEC = {
                  base=dict(yoy_window=330, ma_kind="SMA", threshold=-0.002), pt=(15, 210), gap=3.0),
     "中美汇率": dict(xk="short_ma", xr=(4, 30, 2), yk="long_ma", yr=(20, 60, 2),
                  base=dict(ma_kind="SMA", threshold=-0.01), pt=(20, 30), gap=1.5),
-    "中美利差": dict(xk="short_ma", xr=(4, 30, 2), yk="long_ma", yr=(40, 250, 10),
-                 base=dict(ma_kind="SMA", threshold=-0.05), pt=(10, 80), gap=2.0),
+    "中美利差": dict(xk="short_ma", xr=(5, 95, 3), yk="long_ma", yr=(40, 200, 10),
+                 base=dict(ma_kind="SMA", threshold=-0.05), pt=(10, 80), gap=1.3),  # short 扫到年化回落(峰≈50)
     "期货基差": dict(xk="ma_window", xr=(60, 90, 1), yk="p", yr=(1.0, 1.8, 0.05),
                  base=dict(smooth_days=3), pt=(74, 1.4)),        # 围绕组1 74/1.4 收窄细扫，看高原
     "期权PCR": dict(xk="short_ma", xr=(8, 24, 1), yk="long_ma", yr=(20, 44, 1),
